@@ -4,6 +4,14 @@ This is a new [**React Native**](https://reactnative.dev) project, bootstrapped 
 
 > **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
 
+## Custom Fonts
+
+- Put your `.ttf` / `.otf` files in `assets/fonts/`.
+- The project includes `react-native.config.js` so the React Native CLI can link these assets.
+- After adding/removing fonts, rebuild the app:
+  - iOS: `cd ios && pod install && cd .. && npm run ios`
+  - Android: `npm run android`
+
 ## Step 1: Start Metro
 
 First, you will need to run **Metro**, the JavaScript build tool for React Native.
