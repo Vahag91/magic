@@ -1,0 +1,21 @@
+import * as React from 'react';
+import Svg, { G, Path } from 'react-native-svg';
+
+export default function FolderOpenIcon({ size = 24, color = '#AAC1F0' }) {
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 960 960"
+      preserveAspectRatio="xMidYMid meet"
+    >
+      <G transform="translate(0 960)">
+        <Path
+          fill={color}
+          d="M160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h240l80 80h320q33 0 56.5 23.5T880-640v400q0 33-23.5 56.5T800-160H160Zm0-80h640v-400H447l-80-80H160v480Zm0 0v-480 480Z"
+        />
+      </G>
+    </Svg>
+  );
+}
+

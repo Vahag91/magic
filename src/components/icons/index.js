@@ -1,0 +1,9 @@
+export { default as ArrowRightIcon } from './ArrowRightIcon';
+export { default as ChevronRightIcon } from './ChevronRightIcon';
+export { default as FolderOpenIcon } from './FolderOpenIcon';
+export { default as LightbulbIcon } from './LightbulbIcon';
+export { default as PersonRemoveIcon } from './PersonRemoveIcon';
+export { default as PhotoCameraIcon } from './PhotoCameraIcon';
+export { default as PhotoLibraryIcon } from './PhotoLibraryIcon';
+export { default as SettingsIcon } from './SettingsIcon';
+export { default as ProcessingMagicIcon } from './ProcessingMagicIcon';
