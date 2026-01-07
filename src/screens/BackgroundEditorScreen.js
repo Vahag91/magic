@@ -612,7 +612,6 @@ const TextOverlay = ({ layers, selectedId, onSelect, onUpdate, activeLayer }) =>
     );
 };
 
-// --- Styles ---
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f3f4f6' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: 'white', borderBottomWidth: 1, borderColor: '#e5e7eb' },
