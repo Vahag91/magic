@@ -3,13 +3,13 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   TouchableOpacity,
   Image,
   Platform,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, common, shadow } from '../styles';
 import { ProcessingMagicIcon } from '../components/icons';
 import { supabase } from '../services/supabaseClient'; // ✅ change path to your supabase client

@@ -21,6 +21,7 @@ import TransparentIcon from '../../components/icons/TransparentIcon';
 import { PALETTE, MODES, Icon, PREDEFINED_BACKGROUNDS } from './constants';
 import CustomSlider from './CustomSlider';
 import { styles, SHEET_MIN_HEIGHT, SHEET_MAX_HEIGHT } from './styles';
+import ColorPicker, { HueSlider, Panel1, Preview, Swatches } from 'reanimated-color-picker';
 
 const EditorSheet = (props) => {
   const [activeSubTab, setActiveSubTab] = useState('main');
@@ -189,10 +190,17 @@ const EditorSheet = (props) => {
                 </ScrollView>
 
                 {(props.mode === 'color' || props.mode === 'gradient') && (
-                  <View style={styles.paletteContainer}>
-                    {PALETTE.map(c => (
-                      <TouchableOpacity key={c} onPress={() => props.setSelectedColor(c)} style={[styles.colorDot, { backgroundColor: c }]} />
-                    ))}
+                  <View style={styles.colorPickerWrap}>
+                    <ColorPicker
+                      value={props.selectedColor}
+                      onChangeJS={({ hex }) => props.setSelectedColor(hex)}
+                      style={styles.colorPicker}
+                    >
+                      <Preview style={styles.colorPickerPreview} hideInitialColor />
+                      <Panel1 style={styles.colorPickerPanel} />
+                      <HueSlider style={styles.colorPickerSlider} />
+                      <Swatches colors={PALETTE} style={styles.colorPickerSwatches} />
+                    </ColorPicker>
                   </View>
                 )}
 
@@ -212,7 +220,14 @@ const EditorSheet = (props) => {
                     <Text style={styles.label}>Predefined</Text>
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 10 }}>
                       {PREDEFINED_BACKGROUNDS.map(uri => (
-                        <TouchableOpacity key={uri} onPress={() => props.setBgImageUri(uri)} style={{ marginRight: 10 }}>
+                        <TouchableOpacity
+                          key={uri}
+                          onPress={() => {
+                            props.setBgImageUri(uri);
+                            props.setBgTransform({ x: 0, y: 0, scale: 1 });
+                          }}
+                          style={{ marginRight: 10 }}
+                        >
                           <Image source={{ uri }} style={{ width: 60, height: 80, borderRadius: 8 }} />
                         </TouchableOpacity>
                       ))}

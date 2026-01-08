@@ -3,11 +3,11 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   TouchableOpacity,
   Image,
   Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, hitSlop10 } from '../styles';
 import { ArrowRightIcon, ChevronRightIcon, SettingsIcon } from '../components/icons';
 

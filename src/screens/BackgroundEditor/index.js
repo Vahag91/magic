@@ -2,21 +2,24 @@ import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { launchImageLibrary } from 'react-native-image-picker';
 import {
   View,
-  SafeAreaView,
   Alert,
   ActivityIndicator,
   Text,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PALETTE, PLACEHOLDER_IMAGE } from './constants';
 import { saveSkiaSnapshotToCache } from './helpers';
 import { styles, CANVAS_WIDTH, CANVAS_HEIGHT } from './styles';
+import { createLogger } from '../../logger';
 
 import Header from './Header';
 import SkiaBackgroundPreview from './SkiaBackgroundPreview';
 import FloatingTools from './FloatingTools';
 import EditorSheet from './EditorSheet';
 import TextEditModal from './TextEditModal';
+
+const log = createLogger('BackgroundEditor');
 
 export default function BackgroundEditorScreen({ navigation, route }) {
   const paramResult = route?.params?.subjectUri;
@@ -68,7 +71,7 @@ export default function BackgroundEditorScreen({ navigation, route }) {
   const [eraserPaths, setEraserPaths] = useState([]);
   const [redoPaths, setRedoPaths] = useState([]);
   const [bgTool, setBgTool] = useState('move');
-  const [bgTransform, setBgTransform] = useState({ x: 0, y: 0, scale: 1.2 });
+  const [bgTransform, setBgTransform] = useState({ x: 0, y: 0, scale: 1 });
   const [bgOpacity, setBgOpacity] = useState(100);
 
   const [textLayers, setTextLayers] = useState([]);
@@ -76,30 +79,55 @@ export default function BackgroundEditorScreen({ navigation, route }) {
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editingTextId, setEditingTextId] = useState(null);
 
+  React.useEffect(() => {
+    log.log('screen_mount', {
+      hasSubjectUri: Boolean(paramResult),
+      hasOriginalUri: Boolean(paramOriginal),
+    });
+    return () => log.log('screen_unmount');
+  }, [paramOriginal, paramResult]);
+
   const activeSubjectUri = useMemo(
     () => (subjectVariant === 'cutout' ? cutoutUri : originalUri),
     [subjectVariant, cutoutUri, originalUri],
   );
 
   const handlePickImage = async () => {
-    const result = await launchImageLibrary({ mediaType: 'photo' });
-    if (result.assets && result.assets.length > 0) {
-      setBgImageUri(result.assets[0].uri);
+    log.time('pick_bg_image');
+    try {
+      const result = await launchImageLibrary({ mediaType: 'photo' });
+      const asset = result?.assets?.[0];
+      log.timeEnd('pick_bg_image', {
+        didCancel: Boolean(result?.didCancel),
+        errorCode: result?.errorCode,
+        errorMessage: result?.errorMessage,
+        hasAsset: Boolean(asset?.uri),
+      });
+      if (asset?.uri) {
+        setBgImageUri(asset.uri);
+        setBgTransform({ x: 0, y: 0, scale: 1 });
+      }
+    } catch (e) {
+      log.timeEnd('pick_bg_image', { error: e?.message || String(e) });
     }
   };
 
   const handleMagicGenerate = prompt => {
+    log.time('magic_generate', { promptLen: String(prompt || '').length });
     setIsGenerating(true);
     setTimeout(() => {
       setIsGenerating(false);
       setBgImageUri(`https://picsum.photos/800/1000?random=${Date.now()}`);
+      setBgTransform({ x: 0, y: 0, scale: 1 });
       setMode('image');
       setActiveLayer('background');
+      log.timeEnd('magic_generate', { ok: true });
       Alert.alert('Magic AI', 'Background generated!');
     }, 2000);
   };
 
   const handleSetMode = newMode => {
+    log.log('set_mode', { from: mode, to: newMode });
     if (newMode === 'clear') {
       setMode('transparent');
       setBlurStrength(10);
@@ -108,7 +136,7 @@ export default function BackgroundEditorScreen({ navigation, route }) {
       setBgImageUri(null);
       setBgFilters({ brightness: 100, contrast: 100, saturation: 100, sepia: 0 });
       setSubjectFilters({ brightness: 100, contrast: 100, saturation: 100, sepia: 0 });
-      setBgTransform({ x: 0, y: 0, scale: 1.2 });
+      setBgTransform({ x: 0, y: 0, scale: 1 });
       setBgOpacity(100);
     } else {
       setMode(newMode);
@@ -137,28 +165,43 @@ export default function BackgroundEditorScreen({ navigation, route }) {
 
   const handleSave = useCallback(async () => {
     try {
+      log.time('export_snapshot');
       const snap = previewRef.current?.makeImageSnapshot();
       if (!snap?.image) {
+        log.timeEnd('export_snapshot', { ok: false, reason: 'no_snapshot' });
         Alert.alert('Error', 'Could not capture image.');
         return;
       }
       const { image, width, height } = snap;
+      log.timeEnd('export_snapshot', { ok: true, width, height });
       try {
+        log.time('export_cache_write', { width, height });
         const saved = await saveSkiaSnapshotToCache({
           skImage: image,
           width,
           height,
         });
+        log.timeEnd('export_cache_write', { uri: saved?.uri });
+        log.log('navigate_export', {
+          uri: saved?.uri,
+          width: saved?.width,
+          height: saved?.height,
+          canvasDisplayWidth: CANVAS_WIDTH,
+          canvasDisplayHeight: CANVAS_HEIGHT,
+        });
         navigation.navigate('Export', {
           resultUri: saved.uri,
           width: saved.width,
           height: saved.height,
+          canvasDisplayWidth: CANVAS_WIDTH,
+          canvasDisplayHeight: CANVAS_HEIGHT,
         });
       } finally {
         image.dispose();
+        log.log('snapshot_disposed');
       }
     } catch (e) {
-      console.error(e);
+      log.error('export_failed', { error: e?.message || String(e) });
       Alert.alert('Error', e?.message || 'Failed to export image.');
     }
   }, [navigation]);
@@ -191,7 +234,7 @@ export default function BackgroundEditorScreen({ navigation, route }) {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <Header onBack={() => navigation?.goBack()} onSave={handleSave} />
 
       <View style={styles.previewContainer}>
@@ -201,6 +244,7 @@ export default function BackgroundEditorScreen({ navigation, route }) {
           height={CANVAS_HEIGHT}
           subjectUri={activeSubjectUri}
           originalUri={originalUri}
+          autoAlignSubjectBottom={subjectVariant === 'cutout'}
           bgImageUri={bgImageUri}
           mode={mode}
           showCheckerboard={showCheckerboard}

@@ -2,10 +2,10 @@ import { StyleSheet, Dimensions } from 'react-native';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 export const CANVAS_ASPECT = 4 / 5;
-export const CANVAS_WIDTH = SCREEN_WIDTH - 32;
+export const CANVAS_WIDTH = (SCREEN_WIDTH - 42) * 0.9;
 export const CANVAS_HEIGHT = CANVAS_WIDTH / CANVAS_ASPECT;
 export const TEXT_BASE_FONT_SIZE = 32;
-export const SHEET_MIN_HEIGHT = 320;
+export const SHEET_MIN_HEIGHT = Math.min(320, Math.max(240, SCREEN_HEIGHT * 0.4));
 export const SHEET_MAX_HEIGHT = SCREEN_HEIGHT * 0.65;
 
 
@@ -16,7 +16,14 @@ export const styles = StyleSheet.create({
   headerBtnPrimary: { backgroundColor: 'black', paddingHorizontal: 16, paddingVertical: 6, borderRadius: 20 },
   headerBtnTextPrimary: { color: 'white', fontWeight: 'bold', fontSize: 12 },
   headerIconBtn: { padding: 6, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  previewContainer: { flex: 1, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 20 },
+  previewContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 12,
+    // Reserve space for the collapsed sheet so the canvas doesn't shift when the sheet expands.
+    paddingBottom: SHEET_MIN_HEIGHT ,
+  },
   floatingTools: { position: 'absolute', top: 30, right: 30, flexDirection: 'row', gap: 10, zIndex: 10 },
   circleBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'white', alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.12, elevation: 6 },
   loaderOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(255,255,255,0.7)', justifyContent: 'center', alignItems: 'center', zIndex: 50 },
@@ -47,7 +54,7 @@ export const styles = StyleSheet.create({
   toolBtnActive: { backgroundColor: '#3b82f6' },
   loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   skiaView: { borderRadius: 20, overflow: 'hidden' },
-  canvas: { flex: 1, backgroundColor: 'white' },
+  canvas: { flex: 1, backgroundColor: 'transparent' },
   sheetPadding: { paddingHorizontal: 20 },
   sheetContent: { paddingHorizontal: 20, paddingBottom: 50 },
   subTabRow: { flexDirection: 'row', gap: 10, borderBottomWidth: 1, borderColor: '#f3f4f6', paddingBottom: 10, marginBottom: 15 },
@@ -62,6 +69,12 @@ export const styles = StyleSheet.create({
   modeLabel: { fontSize: 10, marginTop: 4 },
   paletteContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   colorDot: { width: 30, height: 30, borderRadius: 15, borderWidth: 1, borderColor: '#ddd' },
+  colorPickerWrap: { marginTop: 6 },
+  colorPicker: { gap: 12 },
+  colorPickerPreview: { borderRadius: 14, overflow: 'hidden' },
+  colorPickerPanel: { borderRadius: 14, overflow: 'hidden', height: 180 },
+  colorPickerSlider: { borderRadius: 999, overflow: 'hidden' },
+  colorPickerSwatches: { marginTop: 4 },
   bgToolsRow: { flexDirection: 'row', gap: 10, marginTop: 5 },
   subjectToolsRow: { flexDirection: 'row', backgroundColor: '#f3f4f6', padding: 4, borderRadius: 10, marginBottom: 15 },
   subjectToolText: { fontWeight: '700' },

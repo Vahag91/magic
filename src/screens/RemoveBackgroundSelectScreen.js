@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   Pressable,
   ScrollView,
   Alert,
@@ -11,6 +10,7 @@ import {
   PermissionsAndroid,
   Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import { errorCodes, isErrorWithCode, pick, types } from '@react-native-documents/picker';
 import { colors, common, shadow } from '../styles';
