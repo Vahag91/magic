@@ -1,7 +1,4 @@
 import RNFS from 'react-native-fs';
-import { createLogger } from '../../logger';
-
-const log = createLogger('BackgroundEditor/helpers');
 
 export const clampNum = (n) => (Number.isFinite(n) ? n : 0);
 
@@ -34,15 +31,9 @@ export const getColorMatrix = (filters) => {
 export async function saveSkiaSnapshotToCache({ skImage, width, height }) {
   const fileName = `skia-export-${Date.now()}.png`;
   const path = `${RNFS.CachesDirectoryPath}/${fileName}`;
-  log.time('snapshot_encode', { width, height });
   const base64 = skImage.encodeToBase64();
-  log.timeEnd('snapshot_encode', { base64Len: base64?.length || 0 });
-
-  log.time('snapshot_write', { path });
   await RNFS.writeFile(path, base64, 'base64');
-  log.timeEnd('snapshot_write', { path });
 
   const uri = `file://${path}`;
-  log.log('snapshot_saved', { uri, width, height });
   return { uri, width, height };
 }

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,6 @@ import {
   Animated,
   PanResponder,
   TextInput,
-  Alert,
   Image,
 } from 'react-native';
 
@@ -26,8 +25,31 @@ import ColorPicker, { HueSlider, Panel1, Preview, Swatches } from 'reanimated-co
 const EditorSheet = (props) => {
   const [activeSubTab, setActiveSubTab] = useState('main');
   const [magicPrompt, setMagicPrompt] = useState('');
+  const [gradientStop, setGradientStop] = useState('start'); // start | end
   const sheetHeight = useRef(new Animated.Value(SHEET_MIN_HEIGHT)).current;
   const lastHeight = useRef(SHEET_MIN_HEIGHT);
+  const textInputRef = useRef(null);
+
+  useEffect(() => {
+    if (!props.textFocusToken) return;
+    if (props.activeLayer !== 'text') return;
+    if (!props.selectedTextId) return;
+    const id = requestAnimationFrame(() => textInputRef.current?.focus?.());
+    return () => cancelAnimationFrame(id);
+  }, [props.activeLayer, props.selectedTextId, props.textFocusToken]);
+
+  const activeGradientColor = useMemo(() => {
+    if (gradientStop === 'end') return props.gradientEndColor;
+    return props.gradientStartColor;
+  }, [gradientStop, props.gradientEndColor, props.gradientStartColor]);
+
+  const setActiveGradientColor = (hex) => {
+    if (gradientStop === 'end') {
+      props.setGradientEndColor(hex);
+    } else {
+      props.setGradientStartColor(hex);
+    }
+  };
 
   const renderModeIcon = (key, active) => {
     const color = active ? '#3b82f6' : '#6B7280';
@@ -189,7 +211,7 @@ const EditorSheet = (props) => {
                   ))}
                 </ScrollView>
 
-                {(props.mode === 'color' || props.mode === 'gradient') && (
+                {props.mode === 'color' && (
                   <View style={styles.colorPickerWrap}>
                     <ColorPicker
                       value={props.selectedColor}
@@ -204,10 +226,94 @@ const EditorSheet = (props) => {
                   </View>
                 )}
 
+                {props.mode === 'gradient' && (
+                  <View style={styles.gradientWrap}>
+                    <Text style={styles.label}>Gradient Colors</Text>
+                    <View style={styles.gradientStopsRow}>
+                      <TouchableOpacity
+                        onPress={() => setGradientStop('start')}
+                        style={[
+                          styles.gradientStopBtn,
+                          gradientStop === 'start' && styles.gradientStopBtnActive,
+                        ]}
+                      >
+                        <View
+                          style={[
+                            styles.gradientStopSwatch,
+                            { backgroundColor: props.gradientStartColor },
+                          ]}
+                        />
+                        <Text
+                          style={[
+                            styles.gradientStopText,
+                            gradientStop === 'start' && styles.gradientStopTextActive,
+                          ]}
+                        >
+                          Start
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        onPress={() => setGradientStop('end')}
+                        style={[
+                          styles.gradientStopBtn,
+                          gradientStop === 'end' && styles.gradientStopBtnActive,
+                        ]}
+                      >
+                        <View
+                          style={[
+                            styles.gradientStopSwatch,
+                            { backgroundColor: props.gradientEndColor },
+                          ]}
+                        />
+                        <Text
+                          style={[
+                            styles.gradientStopText,
+                            gradientStop === 'end' && styles.gradientStopTextActive,
+                          ]}
+                        >
+                          End
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <View style={styles.colorPickerWrap}>
+                      <ColorPicker
+                        value={activeGradientColor}
+                        onChangeJS={({ hex }) => setActiveGradientColor(hex)}
+                        style={styles.colorPicker}
+                      >
+                        <Preview style={styles.colorPickerPreview} hideInitialColor />
+                        <Panel1 style={styles.colorPickerPanel} />
+                        <HueSlider style={styles.colorPickerSlider} />
+                        <Swatches colors={PALETTE} style={styles.colorPickerSwatches} />
+                      </ColorPicker>
+                    </View>
+
+                    <Text style={styles.label}>Angle</Text>
+                    <CustomSlider
+                      min={0}
+                      max={360}
+                      value={props.gradientAngle}
+                      onValueChange={props.setGradientAngle}
+                    />
+
+                    <Text style={styles.label}>Intensity</Text>
+                    <CustomSlider
+                      min={0}
+                      max={100}
+                      value={props.gradientIntensity}
+                      onValueChange={props.setGradientIntensity}
+                    />
+                  </View>
+                )}
+
                 {props.mode === 'blur' && (
                   <View>
                     <Text style={styles.label}>Blur Strength</Text>
                     <CustomSlider value={props.blurStrength} onValueChange={props.setBlurStrength} />
+                    <Text style={styles.label}>Dim Background</Text>
+                    <CustomSlider value={props.dimBackground} onValueChange={props.setDimBackground} />
                   </View>
                 )}
 
@@ -309,37 +415,59 @@ const EditorSheet = (props) => {
             {props.activeLayer === 'text' && (
               <View>
                 <TouchableOpacity onPress={props.onAddText} style={[styles.actionBtn, styles.addTextBtn]}>
-                  <Text style={styles.addTextBtnLabel}>+ Add Text</Text>
+                  <Text style={styles.addTextBtnLabel}>Add Text</Text>
                 </TouchableOpacity>
 
                 {props.selectedTextId ? (
                   <View style={styles.editTextContainer}>
-                    <Text style={styles.label}>Edit Selected Text</Text>
+                    <Text style={styles.label}>Text</Text>
+                    <TextInput
+                      ref={textInputRef}
+                      value={props.textLayers.find(t => t.id === props.selectedTextId)?.text || ''}
+                      onChangeText={(txt) => props.onUpdateText(props.selectedTextId, { text: txt })}
+                      placeholder="Type your text..."
+                      placeholderTextColor="#9CA3AF"
+                      style={styles.textEditInput}
+                      returnKeyType="done"
+                      blurOnSubmit
+                    />
 
-                    <View style={styles.textColorRow}>
-                      {PALETTE.map(c => (
-                        <TouchableOpacity
-                          key={c}
-                          onPress={() => props.onUpdateText(props.selectedTextId, { color: c })}
-                          style={[styles.textColorDot, { backgroundColor: c }]}
-                        />
-                      ))}
-                    </View>
+                    <TouchableOpacity
+                      onPress={() => props.onDeleteText(props.selectedTextId)}
+                      style={[styles.textActionBtn, styles.textActionBtnDanger]}
+                    >
+                      <Text style={styles.textActionBtnDangerLabel}>Delete</Text>
+                    </TouchableOpacity>
 
-                    <Text style={[styles.label, styles.marginTop10]}>Size</Text>
+                    <Text style={styles.label}>Color</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.textColorRow}>
+                      {PALETTE.map(c => {
+                        const current = props.textLayers.find(t => t.id === props.selectedTextId)?.color;
+                        const isActive = current === c;
+                        return (
+                          <TouchableOpacity
+                            key={c}
+                            onPress={() => props.onUpdateText(props.selectedTextId, { color: c })}
+                            style={[
+                              styles.textColorDot,
+                              { backgroundColor: c },
+                              isActive && styles.textColorDotActive,
+                            ]}
+                          />
+                        );
+                      })}
+                    </ScrollView>
+
+                    <Text style={styles.label}>Size</Text>
                     <CustomSlider
                       min={10}
                       max={120}
                       value={props.textLayers.find(t => t.id === props.selectedTextId)?.fontSize || 24}
                       onValueChange={(v) => props.onUpdateText(props.selectedTextId, { fontSize: v })}
                     />
-
-                    <TouchableOpacity onPress={() => props.onDeleteText(props.selectedTextId)} style={styles.deleteTextBtn}>
-                      <Text style={styles.deleteTextLabel}>Delete Text</Text>
-                    </TouchableOpacity>
                   </View>
                 ) : (
-                  <Text style={styles.noTextLabel}>Tap text on screen to edit or drag</Text>
+                  <Text style={styles.noTextLabel}>Double tap on the image to add text</Text>
                 )}
               </View>
             )}

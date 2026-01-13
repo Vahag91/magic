@@ -24,27 +24,37 @@ import {
 } from '@shopify/react-native-skia';
 import { styles, TEXT_BASE_FONT_SIZE } from './styles';
 import { getColorMatrix } from './helpers';
-import { createLogger } from '../../logger';
-
-const log = createLogger('BackgroundEditor/SkiaPreview');
 
 const SkiaBackgroundPreview = forwardRef(({
   width, height,
   subjectUri, bgImageUri, originalUri,
   autoAlignSubjectBottom = false,
   mode, showCheckerboard, blurStrength, dimBackground,
-  selectedColor, bgOpacity, bgFilters, shadow,
+  selectedColor,
+  gradientAngle = 0,
+  gradientIntensity = 100,
+  gradientStartColor = '#000000',
+  gradientEndColor = '#ffffff',
+  bgOpacity, bgFilters, shadow,
   subjectTransform, onSubjectTransformChange, subjectTool, brushSettings,
   bgTransform, onBgTransformChange, bgTool,
   eraserPaths, setEraserPaths, setRedoPaths,
   // Text Props
-  textLayers, activeLayer, selectedTextId, onSelectText, onUpdateText, onEditTextRequest
+  textLayers,
+  activeLayer,
+  selectedTextId,
+  onSelectText,
+  onUpdateText,
+  onAddTextAt,
+  onTextDoubleTap,
+  onSubjectImageLoadEnd,
 }, ref) => {
   const skiaSubject = useImage(subjectUri);
   const skiaBg = useImage(bgImageUri);
   const skiaOriginal = useImage(originalUri);
   const canvasRef = useCanvasRef();
   const currentPathRef = useRef(null);
+  const lastTapRef = useRef({ t: 0, x: 0, y: 0 });
   const imageLoadStartRef = useRef({
     subjectUri: null,
     subjectT0: 0,
@@ -59,11 +69,11 @@ const SkiaBackgroundPreview = forwardRef(({
     TEXT_BASE_FONT_SIZE
   );
 
+  
   useImperativeHandle(ref, () => ({
     makeImageSnapshot: () => {
       const image = canvasRef.current?.makeImageSnapshot();
       if (!image) return null;
-      log.log('snapshot_created', { w: image.width?.(), h: image.height?.() });
       return { image, width: image.width(), height: image.height() };
     }
   }));
@@ -85,7 +95,6 @@ const SkiaBackgroundPreview = forwardRef(({
     if (imageLoadStartRef.current.subjectUri !== subjectUri) {
       imageLoadStartRef.current.subjectUri = subjectUri;
       imageLoadStartRef.current.subjectT0 = Date.now();
-      log.log('subject_load_start', { uri: subjectUri });
     }
   }, [subjectUri]);
 
@@ -94,7 +103,6 @@ const SkiaBackgroundPreview = forwardRef(({
     if (imageLoadStartRef.current.bgUri !== bgImageUri) {
       imageLoadStartRef.current.bgUri = bgImageUri;
       imageLoadStartRef.current.bgT0 = Date.now();
-      log.log('bg_load_start', { uri: bgImageUri });
     }
   }, [bgImageUri]);
 
@@ -103,7 +111,6 @@ const SkiaBackgroundPreview = forwardRef(({
     if (imageLoadStartRef.current.originalUri !== originalUri) {
       imageLoadStartRef.current.originalUri = originalUri;
       imageLoadStartRef.current.originalT0 = Date.now();
-      log.log('original_load_start', { uri: originalUri });
     }
   }, [originalUri]);
 
@@ -111,36 +118,27 @@ const SkiaBackgroundPreview = forwardRef(({
     if (!skiaSubject || !subjectUri) return;
     const { subjectUri: lastUri, subjectT0 } = imageLoadStartRef.current;
     if (lastUri !== subjectUri || !subjectT0) return;
-    log.log('subject_load_end', {
+    const payload = {
       uri: subjectUri,
       ms: Date.now() - subjectT0,
       w: skiaSubject.width?.(),
       h: skiaSubject.height?.(),
-    });
-  }, [skiaSubject, subjectUri]);
+    };
+    if (typeof onSubjectImageLoadEnd === 'function') {
+      onSubjectImageLoadEnd(payload);
+    }
+  }, [skiaSubject, subjectUri, onSubjectImageLoadEnd]);
 
   useEffect(() => {
     if (!skiaBg || !bgImageUri) return;
     const { bgUri, bgT0 } = imageLoadStartRef.current;
     if (bgUri !== bgImageUri || !bgT0) return;
-    log.log('bg_load_end', {
-      uri: bgImageUri,
-      ms: Date.now() - bgT0,
-      w: skiaBg.width?.(),
-      h: skiaBg.height?.(),
-    });
   }, [bgImageUri, skiaBg]);
 
   useEffect(() => {
     if (!skiaOriginal || !originalUri) return;
     const { originalUri: lastUri, originalT0 } = imageLoadStartRef.current;
     if (lastUri !== originalUri || !originalT0) return;
-    log.log('original_load_end', {
-      uri: originalUri,
-      ms: Date.now() - originalT0,
-      w: skiaOriginal.width?.(),
-      h: skiaOriginal.height?.(),
-    });
   }, [originalUri, skiaOriginal]);
 
   const autoAlignedUriRef = useRef(null);
@@ -180,7 +178,9 @@ const SkiaBackgroundPreview = forwardRef(({
     sx: 0, sy: 0, 
     bx: 0, by: 0,
     tx: 0, ty: 0,
-    draggingTextId: null
+    draggingTextId: null,
+    tapHitText: false,
+    hitTextId: null,
   });
 
   const panResponder = useRef(
@@ -196,34 +196,38 @@ const SkiaBackgroundPreview = forwardRef(({
           x, y,
           sx: s.subjectTransform.x, sy: s.subjectTransform.y,
           bx: s.bgTransform.x, by: s.bgTransform.y,
-          draggingTextId: null
+          draggingTextId: null,
+          tapHitText: false,
+          hitTextId: null,
         };
 
-        if (s.activeLayer === 'text') {
-          let hitId = null;
-          for (let i = s.textLayers.length - 1; i >= 0; i--) {
-            const layer = s.textLayers[i];
-            const scale = (layer.fontSize || TEXT_BASE_FONT_SIZE) / TEXT_BASE_FONT_SIZE;
-            const w = baseFont
-              ? baseFont.getTextWidth(layer.text || '') * scale
-              : (String(layer.text || '').length * (layer.fontSize || 16) * 0.55);
-            const h = layer.fontSize;
+        let hitId = null;
+        for (let i = s.textLayers.length - 1; i >= 0; i--) {
+          const layer = s.textLayers[i];
+          const scale = (layer.fontSize || TEXT_BASE_FONT_SIZE) / TEXT_BASE_FONT_SIZE;
+          const w = baseFont
+            ? baseFont.getTextWidth(layer.text || '') * scale
+            : (String(layer.text || '').length * (layer.fontSize || 16) * 0.55);
+          const h = layer.fontSize;
 
-            if (x >= layer.x && x <= layer.x + w && y >= layer.y - h && y <= layer.y + h * 0.3) {
-              hitId = layer.id;
-              break;
-            }
+          if (x >= layer.x && x <= layer.x + w && y >= layer.y - h && y <= layer.y + h * 0.3) {
+            hitId = layer.id;
+            break;
           }
+        }
 
-          if (hitId) {
+        if (hitId) {
+          gestureStartRef.current.tapHitText = true;
+          gestureStartRef.current.hitTextId = hitId;
+          if (s.activeLayer === 'text') {
             onSelectText(hitId);
             const hitLayer = s.textLayers.find(t => t.id === hitId);
             gestureStartRef.current.draggingTextId = hitId;
             gestureStartRef.current.tx = hitLayer.x;
             gestureStartRef.current.ty = hitLayer.y;
-          } else {
-            onSelectText(null);
           }
+        } else if (s.activeLayer === 'text') {
+          onSelectText(null);
         }
 
         else if (s.activeLayer === 'subject') {
@@ -277,10 +281,30 @@ const SkiaBackgroundPreview = forwardRef(({
 
         currentPathRef.current = null;
 
-        if (s.activeLayer === 'text' && start.draggingTextId) {
-           if (Math.abs(gestureState.dx) < 5 && Math.abs(gestureState.dy) < 5) {
-             onEditTextRequest(start.draggingTextId);
-           }
+        const isTap = Math.abs(gestureState.dx) < 5 && Math.abs(gestureState.dy) < 5;
+        const allowDoubleTapAdd =
+          (typeof onAddTextAt === 'function' || typeof onTextDoubleTap === 'function') &&
+          !(s.activeLayer === 'subject' && s.subjectTool === 'erase');
+
+        if (isTap && allowDoubleTapAdd) {
+          const now = Date.now();
+          const dt = now - (lastTapRef.current.t || 0);
+          const dx = start.x - (lastTapRef.current.x || 0);
+          const dy = start.y - (lastTapRef.current.y || 0);
+          const dist2 = dx * dx + dy * dy;
+          const isDoubleTap = dt > 30 && dt < 450 && dist2 < 35 * 35;
+
+          if (isDoubleTap) {
+            if (start.hitTextId && typeof onTextDoubleTap === 'function') {
+              onTextDoubleTap(start.hitTextId);
+            } else if (!start.tapHitText && typeof onAddTextAt === 'function') {
+              onAddTextAt(start.x, start.y);
+            }
+            lastTapRef.current = { t: 0, x: 0, y: 0 };
+            return;
+          }
+
+          lastTapRef.current = { t: now, x: start.x, y: start.y };
         }
       },
       onPanResponderTerminate: () => {
@@ -294,6 +318,15 @@ const SkiaBackgroundPreview = forwardRef(({
   const subjectOrigin = vec(width / 2, height / 2);
   const bgOrigin = vec(width / 2, height / 2);
   const bgColorMatrix = getColorMatrix(bgFilters);
+  const gradientStop = Math.max(0.05, Math.min(1, (Number(gradientIntensity) || 0) / 100));
+  const rad = ((Number(gradientAngle) || 0) * Math.PI) / 180;
+  const cx = width / 2;
+  const cy = height / 2;
+  const halfLen = Math.sqrt(width * width + height * height) / 2;
+  const gx0 = cx - Math.cos(rad) * halfLen;
+  const gy0 = cy - Math.sin(rad) * halfLen;
+  const gx1 = cx + Math.cos(rad) * halfLen;
+  const gy1 = cy + Math.sin(rad) * halfLen;
 
   return (
     <View style={[styles.skiaView, { width, height }]} {...panResponder.panHandlers}>
@@ -315,7 +348,12 @@ const SkiaBackgroundPreview = forwardRef(({
         )}
         {mode === 'gradient' && (
           <Rect x={0} y={0} width={width} height={height}>
-            <LinearGradient start={vec(0, 0)} end={vec(width, height)} colors={[selectedColor, 'transparent']} />
+            <LinearGradient
+              start={vec(gx0, gy0)}
+              end={vec(gx1, gy1)}
+              colors={[gradientStartColor, gradientEndColor]}
+              positions={[0, gradientStop]}
+            />
           </Rect>
         )}
         {mode === 'image' && skiaBg && (

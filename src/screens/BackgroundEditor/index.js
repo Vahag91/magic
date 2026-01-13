@@ -11,15 +11,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { PALETTE, PLACEHOLDER_IMAGE } from './constants';
 import { saveSkiaSnapshotToCache } from './helpers';
 import { styles, CANVAS_WIDTH, CANVAS_HEIGHT } from './styles';
-import { createLogger } from '../../logger';
 
 import Header from './Header';
 import SkiaBackgroundPreview from './SkiaBackgroundPreview';
 import FloatingTools from './FloatingTools';
 import EditorSheet from './EditorSheet';
-import TextEditModal from './TextEditModal';
-
-const log = createLogger('BackgroundEditor');
 
 export default function BackgroundEditorScreen({ navigation, route }) {
   const paramResult = route?.params?.subjectUri;
@@ -38,6 +34,8 @@ export default function BackgroundEditorScreen({ navigation, route }) {
   const [gradientAngle, setGradientAngle] = useState(30);
   const [gradientIntensity, setGradientIntensity] = useState(70);
   const [selectedColor, setSelectedColor] = useState(PALETTE[2]);
+  const [gradientStartColor, setGradientStartColor] = useState(PALETTE[2]);
+  const [gradientEndColor, setGradientEndColor] = useState(PALETTE[4]);
   const [bgImageUri, setBgImageUri] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [bgFilters, setBgFilters] = useState({
@@ -76,16 +74,7 @@ export default function BackgroundEditorScreen({ navigation, route }) {
 
   const [textLayers, setTextLayers] = useState([]);
   const [selectedTextId, setSelectedTextId] = useState(null);
-  const [editModalVisible, setEditModalVisible] = useState(false);
-  const [editingTextId, setEditingTextId] = useState(null);
-
-  React.useEffect(() => {
-    log.log('screen_mount', {
-      hasSubjectUri: Boolean(paramResult),
-      hasOriginalUri: Boolean(paramOriginal),
-    });
-    return () => log.log('screen_unmount');
-  }, [paramOriginal, paramResult]);
+  const [textFocusToken, setTextFocusToken] = useState(0);
 
   const activeSubjectUri = useMemo(
     () => (subjectVariant === 'cutout' ? cutoutUri : originalUri),
@@ -93,27 +82,19 @@ export default function BackgroundEditorScreen({ navigation, route }) {
   );
 
   const handlePickImage = async () => {
-    log.time('pick_bg_image');
     try {
       const result = await launchImageLibrary({ mediaType: 'photo' });
       const asset = result?.assets?.[0];
-      log.timeEnd('pick_bg_image', {
-        didCancel: Boolean(result?.didCancel),
-        errorCode: result?.errorCode,
-        errorMessage: result?.errorMessage,
-        hasAsset: Boolean(asset?.uri),
-      });
       if (asset?.uri) {
         setBgImageUri(asset.uri);
         setBgTransform({ x: 0, y: 0, scale: 1 });
       }
     } catch (e) {
-      log.timeEnd('pick_bg_image', { error: e?.message || String(e) });
+      // ignore
     }
   };
 
   const handleMagicGenerate = prompt => {
-    log.time('magic_generate', { promptLen: String(prompt || '').length });
     setIsGenerating(true);
     setTimeout(() => {
       setIsGenerating(false);
@@ -121,18 +102,20 @@ export default function BackgroundEditorScreen({ navigation, route }) {
       setBgTransform({ x: 0, y: 0, scale: 1 });
       setMode('image');
       setActiveLayer('background');
-      log.timeEnd('magic_generate', { ok: true });
       Alert.alert('Magic AI', 'Background generated!');
     }, 2000);
   };
 
   const handleSetMode = newMode => {
-    log.log('set_mode', { from: mode, to: newMode });
     if (newMode === 'clear') {
       setMode('transparent');
       setBlurStrength(10);
       setDimBackground(10);
       setSelectedColor(PALETTE[2]);
+      setGradientStartColor(PALETTE[2]);
+      setGradientEndColor(PALETTE[4]);
+      setGradientAngle(30);
+      setGradientIntensity(70);
       setBgImageUri(null);
       setBgFilters({ brightness: 100, contrast: 100, saturation: 100, sepia: 0 });
       setSubjectFilters({ brightness: 100, contrast: 100, saturation: 100, sepia: 0 });
@@ -165,29 +148,17 @@ export default function BackgroundEditorScreen({ navigation, route }) {
 
   const handleSave = useCallback(async () => {
     try {
-      log.time('export_snapshot');
       const snap = previewRef.current?.makeImageSnapshot();
       if (!snap?.image) {
-        log.timeEnd('export_snapshot', { ok: false, reason: 'no_snapshot' });
         Alert.alert('Error', 'Could not capture image.');
         return;
       }
       const { image, width, height } = snap;
-      log.timeEnd('export_snapshot', { ok: true, width, height });
       try {
-        log.time('export_cache_write', { width, height });
         const saved = await saveSkiaSnapshotToCache({
           skImage: image,
           width,
           height,
-        });
-        log.timeEnd('export_cache_write', { uri: saved?.uri });
-        log.log('navigate_export', {
-          uri: saved?.uri,
-          width: saved?.width,
-          height: saved?.height,
-          canvasDisplayWidth: CANVAS_WIDTH,
-          canvasDisplayHeight: CANVAS_HEIGHT,
         });
         navigation.navigate('Export', {
           resultUri: saved.uri,
@@ -198,40 +169,35 @@ export default function BackgroundEditorScreen({ navigation, route }) {
         });
       } finally {
         image.dispose();
-        log.log('snapshot_disposed');
       }
     } catch (e) {
-      log.error('export_failed', { error: e?.message || String(e) });
       Alert.alert('Error', e?.message || 'Failed to export image.');
     }
   }, [navigation]);
 
-  const handleAddText = () => {
+  const handleAddText = ({ x, y, focus = false } = {}) => {
+    const xPos = typeof x === 'number' ? x : CANVAS_WIDTH / 2;
+    const yPos = typeof y === 'number' ? y : CANVAS_HEIGHT / 2;
     const newText = {
       id: Math.random().toString(36).substr(2, 9),
       text: 'Double tap',
       color: '#FFFFFF',
       fontSize: 40,
-      x: CANVAS_WIDTH / 2 - 80,
-      y: CANVAS_HEIGHT / 2,
+      x: xPos - 80,
+      y: yPos,
     };
     setTextLayers(prev => [...prev, newText]);
     setSelectedTextId(newText.id);
     setActiveLayer('text');
+    if (focus) setTextFocusToken(t => t + 1);
   };
 
-  const openTextModal = id => {
-    setEditingTextId(id);
-    setEditModalVisible(true);
-  };
-
-  const saveTextChange = newText => {
-    setTextLayers(prev =>
-      prev.map(t => (t.id === editingTextId ? { ...t, text: newText } : t)),
-    );
-    setEditModalVisible(false);
-    setEditingTextId(null);
-  };
+  const requestTextFocus = useCallback((id) => {
+    if (!id) return;
+    setActiveLayer('text');
+    setSelectedTextId(id);
+    setTextFocusToken(t => t + 1);
+  }, []);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -253,6 +219,8 @@ export default function BackgroundEditorScreen({ navigation, route }) {
           gradientAngle={gradientAngle}
           gradientIntensity={gradientIntensity}
           selectedColor={selectedColor}
+          gradientStartColor={gradientStartColor}
+          gradientEndColor={gradientEndColor}
           bgOpacity={bgOpacity}
           subjectFilters={subjectFilters}
           bgFilters={bgFilters}
@@ -276,7 +244,8 @@ export default function BackgroundEditorScreen({ navigation, route }) {
               prev.map(t => (t.id === id ? { ...t, ...up } : t)),
             )
           }
-          onEditTextRequest={openTextModal}
+          onAddTextAt={(x, y) => handleAddText({ x, y, focus: true })}
+          onTextDoubleTap={requestTextFocus}
           onLayerSelect={setActiveLayer}
         />
 
@@ -316,6 +285,10 @@ export default function BackgroundEditorScreen({ navigation, route }) {
         setGradientIntensity={setGradientIntensity}
         selectedColor={selectedColor}
         setSelectedColor={setSelectedColor}
+        gradientStartColor={gradientStartColor}
+        setGradientStartColor={setGradientStartColor}
+        gradientEndColor={gradientEndColor}
+        setGradientEndColor={setGradientEndColor}
         bgImageUri={bgImageUri}
         setBgImageUri={setBgImageUri}
         bgOpacity={bgOpacity}
@@ -334,6 +307,7 @@ export default function BackgroundEditorScreen({ navigation, route }) {
         setBrushSettings={setBrushSettings}
         textLayers={textLayers}
         selectedTextId={selectedTextId}
+        textFocusToken={textFocusToken}
         onAddText={handleAddText}
         onUpdateText={(id, up) =>
           setTextLayers(prev =>
@@ -346,13 +320,6 @@ export default function BackgroundEditorScreen({ navigation, route }) {
         }}
         onMagicGenerate={handleMagicGenerate}
         onPickImage={handlePickImage}
-      />
-
-      <TextEditModal
-        visible={editModalVisible}
-        initialText={textLayers.find(t => t.id === editingTextId)?.text || ''}
-        onClose={() => setEditModalVisible(false)}
-        onSave={saveTextChange}
       />
     </SafeAreaView>
   );

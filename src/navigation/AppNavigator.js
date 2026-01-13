@@ -5,6 +5,7 @@ import PlaceholderScreen from '../screens/PlaceholderScreen';
 import RemoveBackgroundSelectScreen from '../screens/RemoveBackgroundSelectScreen';
 import RemoveBackgroundProcessingScreen from '../screens/RemoveBackgroundProcessingScreen';
 import RemoveObjectSelectScreen from '../screens/RemoveObjectSelectScreen';
+import ObjectRemoverScreen from '../screens/ObjectRemoverScreen';
 import BackgroundEditorScreen from '../screens/BackgroundEditorScreen';
 // import RefineScreen from '../screens/RefineScreen';  <-- Removed
 // import AdjustScreen from '../screens/AdjustScreen';  <-- Removed
@@ -32,6 +33,7 @@ export default function AppNavigator() {
         name="RemoveObjectSelect"
         component={RemoveObjectSelectScreen}
       />
+      <Stack.Screen name="ObjectRemover" component={ObjectRemoverScreen} />
       <Stack.Screen
         name="Settings"
         component={PlaceholderScreen}
