@@ -1,3 +1,8 @@
+// RemoveBackgroundSelectScreen.js (FULL FIXED)
+// ✅ iOS fix: request CAMERA permission BEFORE calling launchCamera()
+// ✅ Android fix: request CAMERA permission BEFORE calling launchCamera()
+// ✅ Adds loader + hard lock to prevent double taps
+
 import * as React from 'react';
 import {
   View,
@@ -9,6 +14,8 @@ import {
   Linking,
   PermissionsAndroid,
   Platform,
+  ActivityIndicator,
+  InteractionManager,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
@@ -16,6 +23,7 @@ import { errorCodes, isErrorWithCode, pick, types } from '@react-native-document
 import { colors, common, shadow } from '../styles';
 import { SimpleHeader } from '../components';
 import {
+  ImageIcon,
   FolderOpenIcon,
   LightbulbIcon,
   PersonRemoveIcon,
@@ -23,79 +31,87 @@ import {
   PhotoLibraryIcon,
 } from '../components/icons';
 
+// ✅ iOS permission control (REQUIRED to prevent "modal + camera together")
+import { check, request, RESULTS, PERMISSIONS, openSettings } from 'react-native-permissions';
+
 const PRIMARY = colors.blue500;
 const TEXT = colors.text;
 const MUTED = colors.muted;
 const SURFACE = '#F9FAFB';
 
-export default function RemoveBackgroundSelectScreen({ navigation }) {
-  const navigateToProcessing = React.useCallback(
-    ({ imageUri, base64, mime }) => {
-      if (!imageUri && !base64) return;
-      navigation.navigate('RemoveBackgroundProcessing', { imageUri, base64, mime });
-    },
-    [navigation]
-  );
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
+const twoFrames = async () => {
+  await nextFrame();
+  await nextFrame();
+};
 
-  const ensureAndroidPermission = React.useCallback(async (permission, rationale) => {
-    if (Platform.OS !== 'android') return true;
+async function settleUI(ms = 350) {
+  // Helps ensure system modal closes before presenting next native UI
+  try {
+    await InteractionManager.runAfterInteractions(() => {});
+  } catch {}
+  await twoFrames();
+  await sleep(ms);
+}
 
-    const result = await PermissionsAndroid.request(permission, rationale);
-    if (result === PermissionsAndroid.RESULTS.GRANTED) return true;
+export default function RemoveBackgroundSelectScreen({ navigation, route }) {
+  const isActionInProgress = React.useRef(false);
+  const [busy, setBusy] = React.useState(false);
 
-    if (result === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) {
-      Alert.alert('Permission required', 'Please enable permission in Settings to continue.', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Open Settings', onPress: () => Linking.openSettings() },
-      ]);
-      return false;
-    }
+  const isObjectRemoval =
+    route?.name === 'RemoveObjectSelect' || route?.params?.flow === 'objectRemoval';
 
-    Alert.alert('Permission denied', 'Permission is required to continue.');
-    return false;
+  const headerTitle = isObjectRemoval ? 'Remove Object' : 'Remove Background';
+  const heroTitle = 'Select a Photo';
+  const heroSubtitle = isObjectRemoval
+    ? 'Choose an image and paint over what you want removed.'
+    : 'Choose an image to magically remove its background instantly.';
+
+  const HeroIcon = isObjectRemoval ? ImageIcon : PersonRemoveIcon;
+
+  const lock = React.useCallback(() => {
+    if (isActionInProgress.current) return false;
+    isActionInProgress.current = true;
+    setBusy(true);
+    return true;
   }, []);
 
-  const ensurePhotoPermission = React.useCallback(async () => {
-    if (Platform.OS !== 'android') return true;
+  const release = React.useCallback(() => {
+    isActionInProgress.current = false;
+    setBusy(false);
+  }, []);
 
-    const isAndroid13Plus = Number(Platform.Version) >= 33;
-    const permission = isAndroid13Plus
-      ? 'android.permission.READ_MEDIA_IMAGES'
-      : PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE;
+  const navigateNext = React.useCallback(
+    ({ imageUri, base64, mime }) => {
+      if (!imageUri && !base64) return;
 
-    return ensureAndroidPermission(permission, {
-      title: 'Photos permission',
-      message: 'Magic Studio needs access to your photos to select an image.',
-      buttonPositive: 'Allow',
-      buttonNegative: 'Deny',
-    });
-  }, [ensureAndroidPermission]);
+      if (isObjectRemoval) {
+        if (!imageUri) return;
+        navigation.navigate('ObjectRemover', { imageUri });
+        return;
+      }
 
-  const ensureCameraPermission = React.useCallback(async () => {
-    if (Platform.OS !== 'android') return true;
-
-    return ensureAndroidPermission(PermissionsAndroid.PERMISSIONS.CAMERA, {
-      title: 'Camera permission',
-      message: 'Magic Studio needs access to your camera to take a photo.',
-      buttonPositive: 'Allow',
-      buttonNegative: 'Deny',
-    });
-  }, [ensureAndroidPermission]);
+      navigation.navigate('RemoveBackgroundProcessing', { imageUri, base64, mime });
+    },
+    [isObjectRemoval, navigation],
+  );
 
   const handleImagePickerResult = React.useCallback(
     (result) => {
+      release();
+
       if (!result) return;
       if (result.didCancel) return;
 
       if (result.errorCode) {
         if (result.errorCode === 'permission') {
-          Alert.alert('Permission required', 'Please enable permission in Settings to continue.', [
+          Alert.alert('Permission required', 'Please enable permission in Settings.', [
             { text: 'Cancel', style: 'cancel' },
             { text: 'Open Settings', onPress: () => Linking.openSettings() },
           ]);
           return;
         }
-
         Alert.alert('Error', result.errorMessage || 'Something went wrong.');
         return;
       }
@@ -110,43 +126,182 @@ export default function RemoveBackgroundSelectScreen({ navigation }) {
         return;
       }
 
-      navigateToProcessing({ imageUri, base64, mime });
+      navigateNext({ imageUri, base64, mime });
     },
-    [navigateToProcessing]
+    [navigateNext, release],
   );
 
+  // ---------------- Permission helpers ----------------
+
+  const ensureIOSCameraPermission = React.useCallback(async () => {
+    // ✅ This is the key fix: request camera permission BEFORE opening camera UI
+    if (Platform.OS !== 'ios') return { granted: true };
+
+    try {
+      const perm = PERMISSIONS.IOS.CAMERA;
+      const current = await check(perm);
+
+      if (current === RESULTS.GRANTED) return { granted: true };
+      if (current === RESULTS.LIMITED) return { granted: true }; // not typical for camera but safe
+
+      if (current === RESULTS.BLOCKED) return { granted: false, blocked: true };
+
+      // RESULTS.DENIED / RESULTS.UNAVAILABLE
+      const next = await request(perm);
+
+      if (next === RESULTS.GRANTED || next === RESULTS.LIMITED) {
+        // ✅ Important: let iOS dismiss the permission sheet fully
+        await settleUI(450);
+        return { granted: true };
+      }
+
+      if (next === RESULTS.BLOCKED) return { granted: false, blocked: true };
+      return { granted: false, blocked: false };
+    } catch (e) {
+      return { granted: false, blocked: false, error: e };
+    }
+  }, []);
+
+  const ensureAndroidCameraPermission = React.useCallback(async () => {
+    if (Platform.OS !== 'android') return { granted: true };
+
+    try {
+      const perm = PermissionsAndroid.PERMISSIONS.CAMERA;
+      const has = await PermissionsAndroid.check(perm);
+      if (has) return { granted: true };
+
+      const status = await PermissionsAndroid.request(perm, {
+        title: 'Camera Permission',
+        message: 'Magic Studio needs access to your camera to take a photo.',
+        buttonPositive: 'Allow',
+        buttonNegative: 'Deny',
+      });
+
+      if (status === PermissionsAndroid.RESULTS.GRANTED) {
+        // ✅ Let Android permission dialog close cleanly
+        await settleUI(650);
+        return { granted: true };
+      }
+
+      if (status === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) {
+        return { granted: false, blocked: true };
+      }
+
+      return { granted: false, blocked: false };
+    } catch (e) {
+      return { granted: false, blocked: false, error: e };
+    }
+  }, []);
+
+  // ---------------- Actions ----------------
+
   const onPhotoLibrary = React.useCallback(async () => {
-    const ok = await ensurePhotoPermission();
-    if (!ok) return;
+    if (!lock()) return;
 
-    const result = await launchImageLibrary({
-      mediaType: 'photo',
-      selectionLimit: 1,
-      quality: 0.7, // Reduced from 1.0 to reduce upload size (~50% smaller, still high quality)
-      includeBase64: true, // ✅ required for easiest background removal
-    });
+    try {
+      // Keep your existing Android <33 read permission guard
+      if (Platform.OS === 'android' && Number(Platform.Version) < 33) {
+        const perm = PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE;
+        const has = await PermissionsAndroid.check(perm);
+        if (!has) {
+          const status = await PermissionsAndroid.request(perm);
+          if (status !== PermissionsAndroid.RESULTS.GRANTED) {
+            release();
+            if (status === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) {
+              Alert.alert('Permission Required', 'Allow access to photos in settings.', [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Settings', onPress: () => Linking.openSettings() },
+              ]);
+            }
+            return;
+          }
+          await settleUI(350);
+        }
+      }
 
-    handleImagePickerResult(result);
-  }, [ensurePhotoPermission, handleImagePickerResult]);
+      const result = await launchImageLibrary({
+        mediaType: 'photo',
+        selectionLimit: 1,
+        quality: isObjectRemoval ? 1 : 0.7,
+        includeBase64: !isObjectRemoval,
+      });
+
+      handleImagePickerResult(result);
+    } catch (e) {
+      release();
+      Alert.alert('Error', 'Could not open photo library.');
+    }
+  }, [handleImagePickerResult, isObjectRemoval, lock, release]);
 
   const onCamera = React.useCallback(async () => {
-    const ok = await ensureCameraPermission();
-    if (!ok) return;
+    if (!lock()) return;
 
-    const result = await launchCamera({
-      mediaType: 'photo',
-      cameraType: 'back',
-      saveToPhotos: false,
-      quality: 0.7, // Reduced from 1.0 to reduce upload size (~50% smaller, still high quality)
-      includeBase64: true, // ✅ required for easiest background removal
-    });
+    try {
+      // ✅ iOS: request permission FIRST (prevents "modal + camera together")
+      if (Platform.OS === 'ios') {
+        const iosPerm = await ensureIOSCameraPermission();
+        if (!iosPerm.granted) {
+          release();
+          if (iosPerm.blocked) {
+            Alert.alert(
+              'Camera Blocked',
+              'Please enable Camera access in Settings.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Open Settings', onPress: () => openSettings().catch(() => Linking.openSettings()) },
+              ]
+            );
+          }
+          return;
+        }
 
-    handleImagePickerResult(result);
-  }, [ensureCameraPermission, handleImagePickerResult]);
+        // extra settle just in case
+        await settleUI(150);
+      }
+
+      // ✅ Android: request permission FIRST
+      if (Platform.OS === 'android') {
+        const andPerm = await ensureAndroidCameraPermission();
+        if (!andPerm.granted) {
+          release();
+          if (andPerm.blocked) {
+            Alert.alert('Camera Blocked', 'Please enable camera access in your phone Settings.', [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Settings', onPress: () => Linking.openSettings() },
+            ]);
+          }
+          return;
+        }
+        await settleUI(120);
+      }
+
+      // ✅ Only after permission is granted + UI settled, open camera
+      const result = await launchCamera({
+        mediaType: 'photo',
+        cameraType: 'back',
+        saveToPhotos: false,
+        quality: isObjectRemoval ? 1 : 0.7,
+        includeBase64: !isObjectRemoval,
+      });
+
+      handleImagePickerResult(result);
+    } catch (e) {
+      release();
+      Alert.alert('Error', 'Could not open camera.');
+    }
+  }, [
+    ensureAndroidCameraPermission,
+    ensureIOSCameraPermission,
+    handleImagePickerResult,
+    isObjectRemoval,
+    lock,
+    release,
+  ]);
 
   const onFiles = React.useCallback(async () => {
+    if (!lock()) return;
+
     try {
-      // ✅ IMPORTANT: copyTo fixes content:// issues on Android and makes file readable later
       const results = await pick({
         type: [types.images],
         copyTo: 'cachesDirectory',
@@ -156,20 +311,21 @@ export default function RemoveBackgroundSelectScreen({ navigation }) {
       const imageUri = file?.fileCopyUri || file?.uri;
       const mime = file?.type || null;
 
-      if (!imageUri) return;
+      release();
 
-      // Files picker usually doesn't provide base64, processing screen will convert if needed
-      navigateToProcessing({ imageUri, base64: null, mime });
+      if (!imageUri) return;
+      navigateNext({ imageUri, base64: null, mime });
     } catch (error) {
+      release();
       if (isErrorWithCode(error) && error.code === errorCodes.OPERATION_CANCELED) return;
       Alert.alert('Files', 'Could not open file picker.');
     }
-  }, [navigateToProcessing]);
+  }, [lock, navigateNext, release]);
 
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.root}>
-        <SimpleHeader title="Remove Background" onBack={() => navigation.goBack()} />
+        <SimpleHeader title={headerTitle} onBack={() => navigation.goBack()} />
 
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} bounces>
           <View style={styles.heroWrap}>
@@ -180,14 +336,12 @@ export default function RemoveBackgroundSelectScreen({ navigation }) {
               <Text style={[styles.sparkle, { bottom: 6, left: -10 }]}>✦</Text>
 
               <View style={styles.heroIcon}>
-                <PersonRemoveIcon size={44} color="#fff" />
+                <HeroIcon size={44} color="#fff" />
               </View>
             </View>
 
-            <Text style={styles.heroTitle}>Select a Photo</Text>
-            <Text style={styles.heroSubtitle}>
-              Choose an image to magically remove its background instantly.
-            </Text>
+            <Text style={styles.heroTitle}>{heroTitle}</Text>
+            <Text style={styles.heroSubtitle}>{heroSubtitle}</Text>
           </View>
 
           <View style={styles.options}>
@@ -227,13 +381,31 @@ export default function RemoveBackgroundSelectScreen({ navigation }) {
               <View style={styles.tipTextContainer}>
                 <Text style={styles.tipTitle}>Pro Tip</Text>
                 <Text style={styles.tipText}>
-                  Best results come from photos with a <Text style={styles.tipAccent}>clear subject</Text> and{' '}
-                  <Text style={styles.tipAccent}>good lighting</Text>.
+                  {isObjectRemoval ? (
+                    <>
+                      Paint a <Text style={styles.tipAccent}>slightly larger area</Text> than the object for smoother
+                      removal.
+                    </>
+                  ) : (
+                    <>
+                      Best results come from photos with a <Text style={styles.tipAccent}>clear subject</Text> and{' '}
+                      <Text style={styles.tipAccent}>good lighting</Text>.
+                    </>
+                  )}
                 </Text>
               </View>
             </View>
           </View>
         </ScrollView>
+
+        {busy ? (
+          <View style={styles.busyOverlay} pointerEvents="auto">
+            <View style={styles.busyCard}>
+              <ActivityIndicator />
+              <Text style={styles.busyText}>Preparing…</Text>
+            </View>
+          </View>
+        ) : null}
       </View>
     </SafeAreaView>
   );
@@ -373,4 +545,22 @@ const styles = StyleSheet.create({
   tipTitle: { fontSize: 13, fontWeight: '900', color: TEXT, marginBottom: 4 },
   tipText: { fontSize: 12, color: MUTED, lineHeight: 17, fontWeight: '600' },
   tipAccent: { color: PRIMARY, fontWeight: '900' },
+
+  busyOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.10)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  busyCard: {
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    ...shadow({ color: '#000', opacity: 0.08, radius: 18, offsetY: 10, elevation: 3 }),
+  },
+  busyText: { fontSize: 13, fontWeight: '800', color: '#111827' },
 });

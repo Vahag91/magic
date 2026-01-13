@@ -4,12 +4,12 @@ import HomeScreen from '../screens/HomeScreen';
 import PlaceholderScreen from '../screens/PlaceholderScreen';
 import RemoveBackgroundSelectScreen from '../screens/RemoveBackgroundSelectScreen';
 import RemoveBackgroundProcessingScreen from '../screens/RemoveBackgroundProcessingScreen';
-import RemoveObjectSelectScreen from '../screens/RemoveObjectSelectScreen';
 import ObjectRemoverScreen from '../screens/ObjectRemoverScreen';
 import BackgroundEditorScreen from '../screens/BackgroundEditorScreen';
 // import RefineScreen from '../screens/RefineScreen';  <-- Removed
 // import AdjustScreen from '../screens/AdjustScreen';  <-- Removed
 import ExportScreen from '../screens/ExportScreen';
+import OnboardingScreen from '../screens/Onboarding/OnboardingScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -17,6 +17,7 @@ export default function AppNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Home" component={HomeScreen} />
+      <Stack.Screen name="Onboarding" component={OnboardingScreen} />
 
       <Stack.Screen
         name="RemoveBackgroundSelect"
@@ -31,7 +32,8 @@ export default function AppNavigator() {
       <Stack.Screen name="Export" component={ExportScreen} />
       <Stack.Screen
         name="RemoveObjectSelect"
-        component={RemoveObjectSelectScreen}
+        component={RemoveBackgroundSelectScreen}
+        initialParams={{ flow: 'objectRemoval' }}
       />
       <Stack.Screen name="ObjectRemover" component={ObjectRemoverScreen} />
       <Stack.Screen

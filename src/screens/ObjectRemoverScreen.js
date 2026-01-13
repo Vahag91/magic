@@ -15,37 +15,6 @@ import { CANVAS_WIDTH } from './BackgroundEditor/styles';
 const TEXT = colors.text || '#111827';
 const SUB = colors.muted || '#6B7280';
 
-function clipText(value, maxLen) {
-  const text = typeof value === 'string' ? value : '';
-  const max = Math.max(0, Math.round(Number(maxLen) || 0));
-  if (!max || text.length <= max) return text;
-  return `${text.slice(0, max)}…`;
-}
-
-
-function requestPayloadToDebugJson(payload) {
-  if (!payload) return '';
-
-  const seedImageText = payload?.seedImage
-    ? `${clipText(payload.seedImage, 220)} (len ${payload.seedImage.length})`
-    : 'generating…';
-
-  const maskImageText = payload?.maskImage
-    ? `${clipText(payload.maskImage, 220)} (len ${payload.maskImage.length})`
-    : 'generating…';
-
-  return JSON.stringify(
-    {
-      seedImage: seedImageText,
-      maskImage: maskImageText,
-      width: payload?.width,
-      height: payload?.height,
-    },
-    null,
-    2,
-  );
-}
-
 function strokeInkScore(strokes) {
   const list = Array.isArray(strokes) ? strokes : [];
   let score = 0;
@@ -75,7 +44,6 @@ export default function ObjectRemoverScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
 
   const imageUri = route?.params?.imageUri || null;
-  const showRequestPayload = __DEV__ || route?.params?.showRequestPayload === true;
   const paramW = Number(route?.params?.width) || 0;
   const paramH = Number(route?.params?.height) || 0;
 
@@ -92,7 +60,6 @@ export default function ObjectRemoverScreen({ navigation, route }) {
 
   const [isWorking, setIsWorking] = React.useState(false);
   const [workingText, setWorkingText] = React.useState('Removing object…');
-  const [requestPayload, setRequestPayload] = React.useState(null);
   const abortRef = React.useRef(null);
 
   React.useEffect(() => {
@@ -187,7 +154,6 @@ export default function ObjectRemoverScreen({ navigation, route }) {
         onPress: () => {
           abortRef.current?.abort?.();
           setIsWorking(false);
-          setRequestPayload(null);
           navigation.goBack();
         },
       },
@@ -219,12 +185,6 @@ export default function ObjectRemoverScreen({ navigation, route }) {
 
     setIsWorking(true);
     setWorkingText('Preparing image…');
-    setRequestPayload({
-      seedImage: null,
-      maskImage: null,
-      width: target.width,
-      height: target.height,
-    });
 
     try {
       const seedDataUri = await resizeSeedToDataUri({
@@ -237,7 +197,6 @@ export default function ObjectRemoverScreen({ navigation, route }) {
 
       if (controller.signal.aborted) return;
 
-      setRequestPayload((prev) => (prev ? { ...prev, seedImage: seedDataUri } : prev));
       setWorkingText('Exporting mask…');
       const maskDataUri = exportMaskToDataUri({
         strokes,
@@ -247,7 +206,6 @@ export default function ObjectRemoverScreen({ navigation, route }) {
         sourceHeight: srcH,
       });
 
-      setRequestPayload((prev) => (prev ? { ...prev, maskImage: maskDataUri } : prev));
       setWorkingText('Removing object…');
       const imageURL = await removeObjectRunware({
         seedUri: seedDataUri,
@@ -272,7 +230,6 @@ export default function ObjectRemoverScreen({ navigation, route }) {
     } finally {
       abortRef.current = null;
       setIsWorking(false);
-      setRequestPayload(null);
     }
   }, [canSubmit, imageSize.height, imageSize.width, imageUri, isWorking, navigation, strokes]);
 
@@ -332,34 +289,7 @@ export default function ObjectRemoverScreen({ navigation, route }) {
           bottomInset={insets.bottom}
         />
 
-        <LoadingOverlay visible={isWorking} message={workingText}>
-          {showRequestPayload && requestPayload ? (
-            <View style={styles.payloadWrap}>
-              <Text style={styles.payloadTitle}>Request payload</Text>
-
-              <View style={styles.payloadImages}>
-                {requestPayload?.seedImage ? (
-                  <Image
-                    source={{ uri: requestPayload.seedImage }}
-                    style={styles.payloadImage}
-                    resizeMode="cover"
-                  />
-                ) : null}
-                {requestPayload?.maskImage ? (
-                  <Image
-                    source={{ uri: requestPayload.maskImage }}
-                    style={styles.payloadImage}
-                    resizeMode="cover"
-                  />
-                ) : null}
-              </View>
-
-              <Text selectable style={styles.payloadCode}>
-                {requestPayloadToDebugJson(requestPayload)}
-              </Text>
-            </View>
-          ) : null}
-        </LoadingOverlay>
+        <LoadingOverlay visible={isWorking} message={workingText} />
       </View>
     </SafeAreaView>
   );
@@ -381,19 +311,4 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   title: { fontSize: 16, fontWeight: '900', color: TEXT },
   sub: { marginTop: 8, fontSize: 12, fontWeight: '700', color: SUB },
-  payloadWrap: {
-    width: '100%',
-    borderRadius: 14,
-    padding: 12,
-    backgroundColor: 'rgba(17,24,39,0.06)',
-  },
-  payloadTitle: { fontSize: 12, fontWeight: '900', color: TEXT, marginBottom: 10 },
-  payloadImages: { flexDirection: 'row', gap: 10, marginBottom: 10 },
-  payloadImage: {
-    width: 86,
-    height: 86,
-    borderRadius: 12,
-    backgroundColor: 'rgba(0,0,0,0.08)',
-  },
-  payloadCode: { fontSize: 10, fontWeight: '700', color: '#111827' },
 });

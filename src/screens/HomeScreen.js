@@ -71,6 +71,14 @@ export default function HomeScreen({ navigation }) {
             <Text style={styles.ctaText}>Start Free Trial</Text>
             <ArrowRightIcon size={20} color="#fff" />
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.testButton}
+            activeOpacity={0.85}
+            onPress={() => navigation && navigation.navigate('Onboarding')}
+          >
+            <Text style={styles.testButtonText}>Test Onboarding</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Feature List */}
@@ -251,6 +259,19 @@ const styles = StyleSheet.create({
   ctaText: {
     color: COLORS.white,
     fontSize: 16,
+    fontWeight: '700',
+  },
+  testButton: {
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 999,
+  },
+  testButtonText: {
+    color: COLORS.textMain,
+    fontSize: 14,
     fontWeight: '700',
   },
 

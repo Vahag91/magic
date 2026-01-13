@@ -1,4 +1,9 @@
-import React, { useState } from 'react';
+// ExportScreen.js (FULL FIXED)
+// ✅ iOS first-save race fix: show loader, WAIT until Photos is "ready", then save.
+// ✅ Warm-up Photos + readiness loop (no immediate save)
+// ✅ Still keeps a small retry for the rare case save fails even after warmup
+
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,13 +12,15 @@ import {
   Image,
   ScrollView,
   Platform,
+  Linking,
   Alert,
   ActivityIndicator,
   PermissionsAndroid,
 } from 'react-native';
-import { CameraRoll } from '@react-native-camera-roll/camera-roll';
+import { CameraRoll, iosRequestAddOnlyGalleryPermission } from '@react-native-camera-roll/camera-roll';
 import Share from 'react-native-share';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import RNFS from 'react-native-fs';
 
 import {
   ArrowBackIcon,
@@ -43,6 +50,233 @@ const TiledCheckerboard = () => (
   </View>
 );
 
+// ---------------------- Helpers ----------------------
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function formatUriForLog(uri) {
+  const s = String(uri || '');
+  if (!s) return '';
+  if (/^data:/i.test(s)) return `data:… (len ${s.length})`;
+  return s.length > 180 ? `${s.slice(0, 180)}…` : s;
+}
+
+function isHttpUrl(s) {
+  return typeof s === 'string' && /^https?:\/\//i.test(s);
+}
+function isDataUri(s) {
+  return typeof s === 'string' && /^data:/i.test(s);
+}
+function parseDataUri(uri) {
+  const clean = String(uri || '').replace(/\s/g, '');
+  const match = /^data:([^;]+);base64,(.+)$/i.exec(clean);
+  if (!match) return null;
+  return { mime: match[1] || 'application/octet-stream', base64: match[2] || '' };
+}
+function extensionFromMime(mime) {
+  const m = String(mime || '').toLowerCase();
+  if (m === 'image/png') return 'png';
+  if (m === 'image/jpg' || m === 'image/jpeg') return 'jpg';
+  if (m === 'image/webp') return 'webp';
+  return 'png';
+}
+function extensionFromUrl(url) {
+  const clean = String(url || '').split('?')[0].split('#')[0];
+  const match = /\.(png|jpe?g|webp)$/i.exec(clean);
+  if (!match) return 'png';
+  const ext = String(match[1] || '').toLowerCase();
+  return ext === 'jpeg' ? 'jpg' : ext;
+}
+function stripFileScheme(uri) {
+  return String(uri || '').replace(/^file:\/\//i, '');
+}
+
+function isIOSNotReadySaveError(err) {
+  const msg = String(err?.message || '').toLowerCase();
+  const code = String(err?.code || '');
+  return (
+    code === 'E_UNABLE_TO_SAVE' ||
+    msg.includes('unknown error from a native module') ||
+    msg.includes('unable to save')
+  );
+}
+
+/**
+ * Ensures the file is on disk (not base64, not http) so CameraRoll can read it.
+ */
+async function prepareLocalAssetUriForSave(uri, log) {
+  if (!uri) throw new Error('Missing image to save.');
+  log?.('prepare:start', { uri: formatUriForLog(uri) });
+
+  // Already a local file
+  if (uri.startsWith('file://') || uri.startsWith('/')) {
+    const safeUri = uri.startsWith('file://') ? uri : `file://${uri}`;
+    log?.('prepare:local', { uri: formatUriForLog(safeUri) });
+    return { uri: safeUri, cleanupPath: null };
+  }
+
+  // Provider URIs
+  if (uri.startsWith('content://') || uri.startsWith('ph://')) {
+    log?.('prepare:providerUri', { uri: formatUriForLog(uri) });
+    return { uri, cleanupPath: null };
+  }
+
+  // Base64 data URI -> write to cache
+  if (isDataUri(uri)) {
+    const parsed = parseDataUri(uri);
+    if (!parsed?.base64) throw new Error('Invalid image data.');
+    const ext = extensionFromMime(parsed.mime);
+    const path = `${RNFS.CachesDirectoryPath}/export-${Date.now()}.${ext}`;
+    log?.('prepare:dataUri->file', { mime: parsed.mime, path, base64Len: parsed.base64.length });
+    await RNFS.writeFile(path, parsed.base64, 'base64');
+    return { uri: `file://${path}`, cleanupPath: path };
+  }
+
+  // Remote URL -> download to cache
+  if (isHttpUrl(uri)) {
+    const ext = extensionFromUrl(uri);
+    const path = `${RNFS.CachesDirectoryPath}/export-${Date.now()}.${ext}`;
+    log?.('prepare:http->download', { url: formatUriForLog(uri), path });
+
+    const result = await RNFS.downloadFile({ fromUrl: uri, toFile: path }).promise;
+    log?.('prepare:download:done', { statusCode: result?.statusCode });
+
+    if (result?.statusCode && result.statusCode >= 400) {
+      throw new Error(`Download failed (${result.statusCode}).`);
+    }
+
+    return { uri: `file://${path}`, cleanupPath: path };
+  }
+
+  throw new Error('Unsupported image URI format.');
+}
+
+/**
+ * Permission handler
+ */
+async function ensureSavePermission(log) {
+  if (Platform.OS === 'ios') {
+    const status = await iosRequestAddOnlyGalleryPermission();
+    log?.('permission:ios', { status });
+    return {
+      granted: status === 'granted' || status === 'limited',
+      shouldOpenSettings: status === 'blocked' || status === 'denied',
+    };
+  }
+
+  if (Platform.OS !== 'android') return { granted: true, shouldOpenSettings: false };
+
+  const api = Number(Platform.Version);
+  log?.('permission:android:api', { api });
+
+  // Android 10+ (API 29+) typically OK for add-only
+  if (api >= 29) {
+    log?.('permission:android:>=29', { granted: true });
+    return { granted: true, shouldOpenSettings: false };
+  }
+
+  // Android < 29 requires WRITE_EXTERNAL_STORAGE
+  const perm = PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE;
+  const has = await PermissionsAndroid.check(perm);
+  log?.('permission:android:<29:check', { perm, has });
+
+  if (has) return { granted: true, shouldOpenSettings: false };
+
+  const status = await PermissionsAndroid.request(perm, {
+    title: 'Storage Permission',
+    message: 'Magic Studio needs access to save photos to your gallery.',
+    buttonPositive: 'Allow',
+    buttonNegative: 'Deny',
+  });
+  log?.('permission:android:<29:request', { perm, status });
+
+  return {
+    granted: status === PermissionsAndroid.RESULTS.GRANTED,
+    shouldOpenSettings: status === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN,
+  };
+}
+
+/**
+ * iOS readiness: warm up Photos & wait until it responds.
+ * IMPORTANT: This prevents first-install “E_UNABLE_TO_SAVE” in many cases.
+ */
+async function waitForIOSPhotosReady(log) {
+  if (Platform.OS !== 'ios') return true;
+
+  // total wait budget
+  const timeoutMs = 4000;
+  const start = Date.now();
+
+  // We do a few probes; if albums/photos query succeeds, Photos is “awake”.
+  // Backoff delays: 150, 250, 400, 600, 800...
+  const delays = [150, 250, 400, 600, 800, 900];
+
+  log?.('ios:photosReady:begin', { timeoutMs });
+
+  // First: a tiny initial delay (let iOS settle permission/UI)
+  await sleep(200);
+
+  while (Date.now() - start < timeoutMs) {
+    try {
+      // Try albums first (usually lighter)
+      await CameraRoll.getAlbums({ assetType: 'Photos' });
+      // Extra short delay after first successful probe
+      await sleep(150);
+
+      // Optional: also probe getPhotos (some devices behave better after one call)
+      await CameraRoll.getPhotos({ first: 1, assetType: 'Photos' });
+
+      log?.('ios:photosReady:ok', { ms: Date.now() - start });
+      return true;
+    } catch (e) {
+      const elapsed = Date.now() - start;
+      log?.('ios:photosReady:probeFail', { ms: elapsed, message: e?.message || String(e) });
+
+      const nextDelay = delays[Math.min(delays.length - 1, Math.floor(elapsed / 500))];
+      await sleep(nextDelay);
+    }
+  }
+
+  log?.('ios:photosReady:timeout', { ms: Date.now() - start });
+  return false;
+}
+
+/**
+ * Save with a SMALL retry, but only after readiness wait.
+ * (This keeps behavior “single tap” even in edge cases)
+ */
+async function saveToCameraRollAfterReady(preparedUri, log) {
+  // 2 attempts max on iOS, 1 on Android
+  const attempts = Platform.OS === 'ios' ? 2 : 1;
+  const backoff = [0, 900];
+
+  let lastErr = null;
+
+  for (let i = 0; i < attempts; i++) {
+    try {
+      if (i > 0) {
+        log?.('save:retryDelay', { attempt: i + 1, ms: backoff[i] });
+        await sleep(backoff[i]);
+      }
+
+      const saved = await CameraRoll.saveAsset(preparedUri, { type: 'photo' });
+      return saved;
+    } catch (e) {
+      lastErr = e;
+      log?.('save:attemptFailed', { attempt: i + 1, code: e?.code, message: e?.message });
+
+      // Only retry iOS not-ready error; otherwise throw
+      if (Platform.OS !== 'ios' || !isIOSNotReadySaveError(e) || i === attempts - 1) {
+        throw e;
+      }
+    }
+  }
+
+  throw lastErr;
+}
+
+// ---------------------- Component ----------------------
+
 export default function ExportScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const resultUri = route?.params?.resultUri;
@@ -51,94 +285,137 @@ export default function ExportScreen({ navigation, route }) {
   const aspectRatio = resultWidth / resultHeight;
   const previewWidth = route?.params?.canvasDisplayWidth || CANVAS_WIDTH;
 
-  // State
   const [format, setFormat] = useState('png');
   const [resolution, setResolution] = useState('original');
   const [isSaving, setIsSaving] = useState(false);
 
   // ✅ Disable JPG until real conversion exists
   const JPG_DISABLED = true;
-
-  // If anything somehow sets JPG, force back to PNG (safety)
-  React.useEffect(() => {
+  useEffect(() => {
     if (JPG_DISABLED && format === 'jpg') setFormat('png');
   }, [JPG_DISABLED, format]);
 
-  // --- Helpers ---
-
-  // ✅ FIX 1: Android 13+ permission flow (READ_MEDIA_IMAGES)
-  const hasAndroidPermission = async () => {
-    if (Platform.OS !== 'android') return true;
-
-    // Android 13+ (API 33+) => granular media permission
-    if (Platform.Version >= 33) {
-      const perm = PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES;
-
-      const has = await PermissionsAndroid.check(perm);
-      if (has) return true;
-
-      const status = await PermissionsAndroid.request(perm);
-      return status === PermissionsAndroid.RESULTS.GRANTED;
-    }
-
-    // Android 10-12 (API 29-32) => READ_EXTERNAL_STORAGE
-    if (Platform.Version >= 29) {
-      const perm = PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE;
-
-      const has = await PermissionsAndroid.check(perm);
-      if (has) return true;
-
-      const status = await PermissionsAndroid.request(perm);
-      return status === PermissionsAndroid.RESULTS.GRANTED;
-    }
-
-    // Android 9 and below (API <= 28) => WRITE_EXTERNAL_STORAGE needed for many devices
-    const perm = PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE;
-
-    const has = await PermissionsAndroid.check(perm);
-    if (has) return true;
-
-    const status = await PermissionsAndroid.request(perm);
-    return status === PermissionsAndroid.RESULTS.GRANTED;
-  };
-
-  // --- Actions ---
+  const debugLogs = __DEV__ || route?.params?.debugExportLogs === true;
+  const log = useCallback(
+    (event, payload) => {
+      if (!debugLogs) return;
+      console.log('[ExportScreen]', event, payload || '');
+    },
+    [debugLogs],
+  );
 
   const onSave = async () => {
     if (!resultUri) return;
     if (isSaving) return;
 
     setIsSaving(true);
+    let cleanupPath = null;
 
     try {
-      if (Platform.OS === 'android' && !(await hasAndroidPermission())) {
-        Alert.alert('Permission Denied', 'We need media access to save the image.');
-        setIsSaving(false);
+      log('save:tap', { uri: formatUriForLog(resultUri), platform: Platform.OS, version: Platform.Version });
+
+      // 1) Permission
+      const permission = await ensureSavePermission(log);
+      log('save:permission', permission);
+
+      if (!permission?.granted) {
+        Alert.alert(
+          'Permission Required',
+          Platform.OS === 'ios'
+            ? 'Please allow Photos access to save images.'
+            : 'Storage permission is required to save images.',
+          permission?.shouldOpenSettings
+            ? [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Open Settings', onPress: () => Linking.openSettings() },
+              ]
+            : [{ text: 'OK' }],
+        );
         return;
       }
 
-      await CameraRoll.saveAsset(resultUri, { type: 'photo' });
+      // 2) WAIT until Photos is ready (iOS only) BEFORE saving
+      if (Platform.OS === 'ios') {
+        log('save:ios:waitingForPhotosReady', {});
+
+        const ready = await waitForIOSPhotosReady(log);
+        if (!ready) {
+          // If Photos doesn't become ready within a short window, show message once
+          Alert.alert(
+            'Preparing Photos…',
+            'Photos is still initializing. Please try again in a moment.',
+          );
+          return;
+        }
+      }
+
+      // 3) Prepare file
+      const prepared = await prepareLocalAssetUriForSave(resultUri, log);
+      cleanupPath = prepared.cleanupPath;
+      log('save:prepared', { preparedUri: formatUriForLog(prepared.uri), cleanupPath });
+
+      // 3.5) Ensure file exists + size (helps catch timing issues)
+      const path = stripFileScheme(prepared.uri);
+      const stat = await RNFS.stat(path);
+      log('file:ready', { path, size: stat?.size });
+
+      // 4) Save (after readiness wait)
+      const saved = await saveToCameraRollAfterReady(prepared.uri, log);
+
+      // Different CameraRoll versions return different shapes
+      const savedUri =
+        typeof saved === 'string'
+          ? saved
+          : saved?.node?.image?.uri
+            ? saved.node.image.uri
+            : saved?.uri
+              ? saved.uri
+              : null;
+
+      log('save:saved', { savedUri });
 
       Alert.alert('Success', 'Image saved to Photos!', [
         { text: 'Great', onPress: () => navigation.popToTop() },
       ]);
     } catch (error) {
-      Alert.alert('Error', 'Could not save image. Please check permissions.');
+      log('save:error', { message: error?.message, code: error?.code, name: error?.name });
+
+      // If we still get the iOS first-time error, don’t confuse user with a hard fail message
+      if (Platform.OS === 'ios' && isIOSNotReadySaveError(error)) {
+        Alert.alert(
+          'Preparing Photos…',
+          'Photos is still initializing. Please try again in a moment.',
+        );
+      } else {
+        Alert.alert('Error', 'Could not save image.');
+      }
     } finally {
       setIsSaving(false);
+      if (cleanupPath) {
+        RNFS.unlink(stripFileScheme(cleanupPath)).catch(() => {});
+      }
     }
   };
 
   const onShare = async () => {
     if (!resultUri) return;
+
+    let cleanupPath = null;
     try {
+      const prepared = await prepareLocalAssetUriForSave(resultUri);
+      cleanupPath = prepared.cleanupPath;
+
       await Share.open({
-        url: resultUri,
-        type: 'image/png', // because JPG is disabled until conversion exists
+        url: prepared.uri,
+        type: 'image/png',
         failOnCancel: false,
       });
-    } catch (error) {
+    } catch {
       // ignore
+    } finally {
+      if (cleanupPath) {
+        RNFS.unlink(stripFileScheme(cleanupPath)).catch(() => {});
+      }
     }
   };
 
@@ -177,13 +454,9 @@ export default function ExportScreen({ navigation, route }) {
             <TiledCheckerboard />
 
             <View style={styles.previewInner}>
-	              {resultUri ? (
-	                <Image
-	                  source={{ uri: resultUri }}
-	                  style={styles.previewImg}
-	                  resizeMode="contain"
-	                />
-	              ) : (
+              {resultUri ? (
+                <Image source={{ uri: resultUri }} style={styles.previewImg} resizeMode="contain" />
+              ) : (
                 <Text style={{ color: SUB, fontWeight: '700' }}>No exported image</Text>
               )}
             </View>
@@ -207,7 +480,6 @@ export default function ExportScreen({ navigation, route }) {
               onPress={() => setFormat('png')}
             />
 
-            {/* ✅ FIX 2: JPG disabled until conversion exists */}
             <FormatCard
               active={false}
               disabled={JPG_DISABLED}
@@ -264,7 +536,10 @@ export default function ExportScreen({ navigation, route }) {
               ]}
             >
               {isSaving ? (
-                <ActivityIndicator color="#fff" />
+                <>
+                  <ActivityIndicator color="#fff" />
+                  <Text style={[styles.primaryBtnText, { marginLeft: 8 }]}>Preparing…</Text>
+                </>
               ) : (
                 <>
                   <Text style={styles.primaryBtnText}>Save to Photos</Text>
@@ -287,7 +562,7 @@ export default function ExportScreen({ navigation, route }) {
   );
 }
 
-// --- Subcomponents ---
+// ---------------------- Subcomponents ----------------------
 
 function FormatCard({ active, disabled, title, subtitle, iconName, onPress }) {
   const IconComponent = iconName === 'png' ? TransparentIcon : BackgroundIcon;
@@ -369,6 +644,8 @@ function Radio({ active, strong }) {
   return <View style={[styles.radioOn, strong && { borderWidth: 6 }]} />;
 }
 
+// ---------------------- Styles ----------------------
+
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: BG },
   root: { flex: 1, backgroundColor: BG },
@@ -409,16 +686,8 @@ const styles = StyleSheet.create({
   previewInner: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   previewImg: { width: '100%', height: '100%' },
 
-  tiledContainer: {
-    ...StyleSheet.absoluteFillObject,
-    overflow: 'hidden',
-    backgroundColor: '#FFF',
-  },
-  tiledImage: {
-    width: '100%',
-    height: '100%',
-    opacity: 0.15,
-  },
+  tiledContainer: { ...StyleSheet.absoluteFillObject, overflow: 'hidden', backgroundColor: '#FFF' },
+  tiledImage: { width: '100%', height: '100%', opacity: 0.15 },
 
   infoPill: {
     position: 'absolute',
@@ -435,7 +704,6 @@ const styles = StyleSheet.create({
   infoPillText: { color: '#fff', fontSize: 12, fontWeight: '700' },
 
   sectionLabel: { fontSize: 12, fontWeight: '900', letterSpacing: 1, color: '#6B7280', marginBottom: 10 },
-
   grid2: { flexDirection: 'row', gap: 12 },
 
   formatCard: {
@@ -513,8 +781,6 @@ const styles = StyleSheet.create({
   upgradeText: { color: '#D1D5DB', fontWeight: '600', fontSize: 12, lineHeight: 16 },
   tryProBtn: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.10)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
   tryProText: { color: '#fff', fontWeight: '800', fontSize: 12 },
-
-  note: { marginTop: 10, color: SUB, fontSize: 12, fontWeight: '600' },
 
   bottomBar: { marginTop: 18, paddingHorizontal: 2, paddingTop: 14 },
   primaryBtn: { height: 56, borderRadius: 999, backgroundColor: PRIMARY, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 10 },
