@@ -107,7 +107,7 @@ export default function BrushToolbar({
       {!canSubmit ? (
         <Text style={styles.hint}>Paint over the object you want to remove.</Text>
       ) : (
-        <Text style={styles.hint}>White = remove. Black = keep.</Text>
+        <Text style={styles.hint}>Red = remove. Use Eraser to restore.</Text>
       )}
     </View>
   );
@@ -183,4 +183,3 @@ const styles = StyleSheet.create({
   submitText: { color: '#fff', fontWeight: '900', fontSize: 16, letterSpacing: 0.2 },
   hint: { marginTop: 8, color: SUB, fontSize: 12, fontWeight: '700' },
 });
-

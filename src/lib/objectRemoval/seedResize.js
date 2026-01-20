@@ -48,3 +48,48 @@ export async function resizeSeedToDataUri({
   throw new Error('Failed to resize image.');
 }
 
+export async function resizeSeedToFileUri({
+  uri,
+  sourceWidth,
+  sourceHeight,
+  targetWidth,
+  targetHeight,
+  format = 'png',
+}) {
+  if (!uri) throw new Error('Missing seed image.');
+
+  const sw = Math.round(Number(sourceWidth) || 0);
+  const sh = Math.round(Number(sourceHeight) || 0);
+  const tw = Math.round(Number(targetWidth) || 0);
+  const th = Math.round(Number(targetHeight) || 0);
+
+  if (!sw || !sh || !tw || !th) throw new Error('Invalid resize parameters.');
+
+  const safeFormat = String(format || '').toLowerCase() === 'png' ? 'png' : 'jpeg';
+
+  async function run(fmt) {
+    return await ImageEditor.cropImage(uri, {
+      offset: { x: 0, y: 0 },
+      size: { width: sw, height: sh },
+      displaySize: { width: tw, height: th },
+      resizeMode: 'contain',
+      quality: 1,
+      format: fmt,
+      includeBase64: false,
+    });
+  }
+
+  let result;
+  let usedFormat = safeFormat;
+  try {
+    result = await run(safeFormat);
+  } catch (e) {
+    if (safeFormat !== 'png') throw e;
+    usedFormat = 'jpeg';
+    result = await run(usedFormat);
+  }
+
+  if (!result?.uri) throw new Error('Failed to resize image.');
+  const mime = result?.type || (usedFormat === 'png' ? 'image/png' : 'image/jpeg');
+  return { uri: result.uri, mime };
+}

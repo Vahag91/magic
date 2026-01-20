@@ -3,7 +3,7 @@
 // ✅ Warm-up Photos + readiness loop (no immediate save)
 // ✅ Still keeps a small retry for the rare case save fails even after warmup
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -21,9 +21,11 @@ import { CameraRoll, iosRequestAddOnlyGalleryPermission } from '@react-native-ca
 import Share from 'react-native-share';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import RNFS from 'react-native-fs';
+import { ImageFormat, Skia } from '@shopify/react-native-skia';
+import { supabase } from '../services/supabaseClient';
+import { getDefaultExportFormat, getHdProcessingEnabled } from '../lib/settings';
 
 import {
-  ArrowBackIcon,
   TransparentIcon,
   BackgroundIcon,
   HDIcon,
@@ -33,6 +35,7 @@ import {
 } from '../components/icons';
 import { colors } from '../styles';
 import { CANVAS_WIDTH } from './BackgroundEditor/styles';
+import { useSubscription } from '../providers/SubscriptionProvider';
 
 const PRIMARY = colors.brandBlue || '#2563EB';
 const BG = '#FFFFFF';
@@ -53,6 +56,19 @@ const TiledCheckerboard = () => (
 // ---------------------- Helpers ----------------------
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function normalizeExportFormat(format) {
+  const f = String(format || '').toLowerCase();
+  return f === 'jpg' || f === 'jpeg' ? 'jpg' : 'png';
+}
+
+function exportMimeFromFormat(format) {
+  return normalizeExportFormat(format) === 'jpg' ? 'image/jpeg' : 'image/png';
+}
+
+function exportExtFromFormat(format) {
+  return normalizeExportFormat(format) === 'jpg' ? 'jpg' : 'png';
+}
 
 function formatUriForLog(uri) {
   const s = String(uri || '');
@@ -89,6 +105,196 @@ function extensionFromUrl(url) {
 }
 function stripFileScheme(uri) {
   return String(uri || '').replace(/^file:\/\//i, '');
+}
+
+function getImageSizeAsync(uri) {
+  return new Promise((resolve, reject) => {
+    if (!uri) return resolve(null);
+    Image.getSize(
+      uri,
+      (width, height) => resolve({ width, height }),
+      (error) => reject(error),
+    );
+  });
+}
+
+function guessMimeFromUri(uri) {
+  const s = String(uri || '');
+  if (!s) return null;
+  if (isDataUri(s)) return parseDataUri(s)?.mime || null;
+
+  const clean = s.split('?')[0].split('#')[0];
+  if (/\.png$/i.test(clean)) return 'image/png';
+  if (/\.jpe?g$/i.test(clean)) return 'image/jpeg';
+  if (/\.webp$/i.test(clean)) return 'image/webp';
+  return null;
+}
+
+async function fileUriToDataUri(uri, mimeFallback = 'image/jpeg') {
+  const path = uri.startsWith('file://') ? stripFileScheme(uri) : uri;
+  const base64 = await RNFS.readFile(path, 'base64');
+  const mime = guessMimeFromUri(uri) || mimeFallback;
+  return `data:${mime};base64,${String(base64 || '').replace(/\s+/g, '')}`;
+}
+
+async function uriToDataUri(uri) {
+  const res = await fetch(uri);
+  if (!res.ok) throw new Error('Failed to read image.');
+  const blob = await res.blob();
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Failed to read image.'));
+    reader.onloadend = () => resolve(String(reader.result || ''));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function skiaDataFromUri(uri) {
+  const u = String(uri || '');
+  if (!u) throw new Error('Missing image.');
+
+  if (isDataUri(u)) {
+    const parsed = parseDataUri(u);
+    if (!parsed?.base64) throw new Error('Invalid image data.');
+    return Skia.Data.fromBase64(parsed.base64);
+  }
+
+  try {
+    return await Skia.Data.fromURI(u);
+  } catch {
+    const dataUri = await uriToDataUri(u);
+    const parsed = parseDataUri(dataUri);
+    if (!parsed?.base64) throw new Error('Could not read image data.');
+    return Skia.Data.fromBase64(parsed.base64);
+  }
+}
+
+async function getDecodedImageSize(uri) {
+  const u = String(uri || '');
+  if (!u) return null;
+
+  try {
+    const size = await getImageSizeAsync(u);
+    if (size?.width && size?.height) return size;
+  } catch {
+    // fall through
+  }
+
+  try {
+    const data = await skiaDataFromUri(u);
+    const image = Skia.Image.MakeImageFromEncoded(data);
+    if (!image) return null;
+    const width = image.width();
+    const height = image.height();
+    image.dispose?.();
+    if (!width || !height) return null;
+    return { width, height };
+  } catch {
+    return null;
+  }
+}
+
+function pickHdUpscaleFactor({ width, height }) {
+  const w = Math.round(Number(width) || 0);
+  const h = Math.round(Number(height) || 0);
+  if (!w || !h) return 2;
+
+  // "HD" means: try to reach a ~4K long side, without over-upscaling large inputs.
+  const longSide = Math.max(w, h);
+  const targetLongSide = 4000;
+  const required = targetLongSide / longSide;
+
+  if (required <= 1.05) return 1;
+  if (required <= 2) return 2;
+  if (required <= 4) return 4;
+  return 8; // Edge function clamps to 8
+}
+
+async function ensureUpscaleInputImage(inputUri, log) {
+  const uri = String(inputUri || '');
+  if (!uri) throw new Error('Missing image for upscale.');
+
+  if (isHttpUrl(uri) || isDataUri(uri)) return uri;
+
+  if (uri.startsWith('file://') || uri.startsWith('/')) {
+    const dataUri = await fileUriToDataUri(uri, 'image/png');
+    log?.('upscale:input:file->data', { bytesApprox: Math.round(dataUri.length * 0.75), mime: guessMimeFromUri(uri) });
+    return dataUri;
+  }
+
+  const dataUri = await uriToDataUri(uri);
+  log?.('upscale:input:uri->data', { bytesApprox: Math.round(dataUri.length * 0.75) });
+  return dataUri;
+}
+
+function upscaleOutputFormatForExport(format) {
+  return normalizeExportFormat(format) === 'png' ? 'PNG' : 'JPEG';
+}
+
+async function upscaleImageViaSupabase({ inputUri, exportFormat, upscaleFactor, log }) {
+  const inputImage = await ensureUpscaleInputImage(inputUri, log);
+  const outputFormat = upscaleOutputFormatForExport(exportFormat);
+
+  log?.('upscale:invoke', { outputFormat, upscaleFactor });
+  const { data, error } = await supabase.functions.invoke('upscale-function', {
+    body: {
+      inputImage,
+      outputFormat,
+      outputType: ['URL'],
+      includeCost: false,
+      upscaleFactor,
+    },
+  });
+  if (error) throw new Error(error?.message || 'Upscale failed.');
+  if (data?.error) throw new Error(data?.message || data?.error || 'Upscale failed.');
+
+  const upscaledUri = data?.images?.[0]?.url || data?.images?.[0]?.imageURL || data?.images?.[0]?.imageUrl;
+  if (!upscaledUri) throw new Error('Upscale returned no image.');
+
+  log?.('upscale:ok', { uri: formatUriForLog(upscaledUri) });
+  return { uri: String(upscaledUri) };
+}
+
+async function transcodeImageToCache({ uri, format, quality = 92, backgroundColor = '#FFFFFF', log }) {
+  const outFormat = normalizeExportFormat(format);
+  const ext = exportExtFromFormat(outFormat);
+  const outPath = `${RNFS.CachesDirectoryPath}/export-${Date.now()}.${ext}`;
+  const outUri = `file://${outPath}`;
+
+  log?.('transcode:start', { uri: formatUriForLog(uri), outFormat, outPath });
+
+  const data = await skiaDataFromUri(uri);
+  const image = Skia.Image.MakeImageFromEncoded(data);
+  if (!image) throw new Error('Could not decode image for export.');
+
+  const w = image.width();
+  const h = image.height();
+  if (!w || !h) throw new Error('Invalid image size for export.');
+
+  const surface = Skia.Surface.Make(w, h);
+  if (!surface) throw new Error('Could not create export surface.');
+
+  const canvas = surface.getCanvas();
+  canvas.clear(Skia.Color(outFormat === 'jpg' ? backgroundColor : '#00000000'));
+  canvas.drawImage(image, 0, 0);
+
+  surface.flush?.();
+  image.dispose?.();
+
+  const snapshot = surface.makeImageSnapshot();
+  if (!snapshot) throw new Error('Export snapshot failed.');
+
+  const skFormat = outFormat === 'jpg' ? ImageFormat.JPEG : ImageFormat.PNG;
+  const q = outFormat === 'jpg' ? Math.max(1, Math.min(100, Number(quality) || 92)) : 100;
+  const base64 = snapshot.encodeToBase64(skFormat, q);
+  snapshot.dispose?.();
+
+  if (!base64) throw new Error('Export encoding failed.');
+  await RNFS.writeFile(outPath, base64, 'base64');
+
+  log?.('transcode:done', { outUri: formatUriForLog(outUri), w, h, outFormat });
+
+  return { uri: outUri, cleanupPath: outPath, width: w, height: h, mime: exportMimeFromFormat(outFormat) };
 }
 
 function isIOSNotReadySaveError(err) {
@@ -279,37 +485,133 @@ async function saveToCameraRollAfterReady(preparedUri, log) {
 
 export default function ExportScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
+  const { isPremium } = useSubscription();
   const resultUri = route?.params?.resultUri;
   const resultWidth = route?.params?.width || 1080;
   const resultHeight = route?.params?.height || 1350;
-  const aspectRatio = resultWidth / resultHeight;
   const previewWidth = route?.params?.canvasDisplayWidth || CANVAS_WIDTH;
+  const previewHeight = route?.params?.canvasDisplayHeight || null;
 
   const [format, setFormat] = useState('png');
   const [resolution, setResolution] = useState('original');
   const [isSaving, setIsSaving] = useState(false);
+  const [inputSize, setInputSize] = useState(null);
+  const didUserChangeFormatRef = useRef(false);
+  const didUserChangeResolutionRef = useRef(false);
 
-  // ✅ Disable JPG until real conversion exists
-  const JPG_DISABLED = true;
+  const log = useCallback(() => {}, []);
+
   useEffect(() => {
-    if (JPG_DISABLED && format === 'jpg') setFormat('png');
-  }, [JPG_DISABLED, format]);
+    let alive = true;
 
-  const debugLogs = __DEV__ || route?.params?.debugExportLogs === true;
-  const log = useCallback(
-    (event, payload) => {
-      if (!debugLogs) return;
-      console.log('[ExportScreen]', event, payload || '');
-    },
-    [debugLogs],
-  );
+    (async () => {
+      const saved = await getDefaultExportFormat();
+      if (!alive) return;
+      if (didUserChangeFormatRef.current) return;
+      setFormat(saved);
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      const enabled = await getHdProcessingEnabled({ fallback: isPremium });
+      if (!alive) return;
+      if (didUserChangeResolutionRef.current) return;
+      setResolution(isPremium && enabled ? 'hd' : 'original');
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [isPremium]);
+
+  useEffect(() => {
+    let alive = true;
+    setInputSize(null);
+    if (!resultUri) return () => {};
+
+    (async () => {
+      const size = await getDecodedImageSize(resultUri);
+      if (!alive) return;
+      if (size?.width && size?.height) setInputSize(size);
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [resultUri]);
+
+  const effectiveWidth = inputSize?.width || Math.round(Number(resultWidth) || 0);
+  const effectiveHeight = inputSize?.height || Math.round(Number(resultHeight) || 0);
+  const aspectRatio =
+    effectiveWidth && effectiveHeight ? effectiveWidth / effectiveHeight : Number(resultWidth) / Number(resultHeight);
+
+  const isHdSelected = resolution === 'hd' && isPremium;
+  const hdUpscaleFactor = isHdSelected
+    ? pickHdUpscaleFactor({ width: effectiveWidth, height: effectiveHeight })
+    : 1;
+
+  const upscaleCacheRef = useRef({
+    cacheKey: null,
+    upscaledUri: null,
+    inFlightKey: null,
+    inFlightPromise: null,
+  });
+
+  const getHdUpscaledUri = useCallback(async () => {
+    const factor = pickHdUpscaleFactor({ width: effectiveWidth, height: effectiveHeight });
+
+    if (factor <= 1) return resultUri;
+
+    // Always upscale to a high-quality PNG intermediate, then export pipeline converts to PNG/JPG.
+    // This avoids double-JPEG compression and lets Save/Share reuse the same upscale result.
+    const cacheKey = `png|${factor}|${String(resultUri || '').slice(0, 120)}`;
+    if (upscaleCacheRef.current.cacheKey === cacheKey && upscaleCacheRef.current.upscaledUri) {
+      log('upscale:cacheHit', { uri: formatUriForLog(upscaleCacheRef.current.upscaledUri) });
+      return upscaleCacheRef.current.upscaledUri;
+    }
+
+    if (upscaleCacheRef.current.inFlightKey === cacheKey && upscaleCacheRef.current.inFlightPromise) {
+      return await upscaleCacheRef.current.inFlightPromise;
+    }
+
+    const promise = (async () => {
+      try {
+        const upscaled = await upscaleImageViaSupabase({
+          inputUri: resultUri,
+          exportFormat: 'png',
+          upscaleFactor: factor,
+          log,
+        });
+
+        upscaleCacheRef.current.cacheKey = cacheKey;
+        upscaleCacheRef.current.upscaledUri = upscaled.uri;
+        return upscaled.uri;
+      } finally {
+        if (upscaleCacheRef.current.inFlightKey === cacheKey) {
+          upscaleCacheRef.current.inFlightKey = null;
+          upscaleCacheRef.current.inFlightPromise = null;
+        }
+      }
+    })();
+
+    upscaleCacheRef.current.inFlightKey = cacheKey;
+    upscaleCacheRef.current.inFlightPromise = promise;
+    return await promise;
+  }, [effectiveHeight, effectiveWidth, log, resultUri]);
 
   const onSave = async () => {
     if (!resultUri) return;
     if (isSaving) return;
 
     setIsSaving(true);
-    let cleanupPath = null;
+    const cleanupPaths = [];
 
     try {
       log('save:tap', { uri: formatUriForLog(resultUri), platform: Platform.OS, version: Platform.Version });
@@ -349,18 +651,61 @@ export default function ExportScreen({ navigation, route }) {
         }
       }
 
-      // 3) Prepare file
-      const prepared = await prepareLocalAssetUriForSave(resultUri, log);
-      cleanupPath = prepared.cleanupPath;
-      log('save:prepared', { preparedUri: formatUriForLog(prepared.uri), cleanupPath });
+      // 3) For HD export, try server upscale first (fallbacks to local export if it fails)
+      let inputUri = resultUri;
+      if (isHdSelected) {
+        try {
+          inputUri = await getHdUpscaledUri();
+        } catch (e) {
+          log('save:upscaleFailed', { message: e?.message || String(e) });
+          inputUri = resultUri;
+        }
+      }
+      const usedUpscaledInput = isHdSelected && inputUri !== resultUri;
+
+      // 4) Prepare file (download/base64 -> local file)
+      const prepared = await prepareLocalAssetUriForSave(inputUri, log);
+      if (prepared.cleanupPath) cleanupPaths.push(prepared.cleanupPath);
+      log('save:prepared', { preparedUri: formatUriForLog(prepared.uri), cleanupPath: prepared.cleanupPath || null });
+
+      // 5) Convert to selected export format
+      let transcoded;
+      try {
+        transcoded = await transcodeImageToCache({
+          uri: prepared.uri,
+          format,
+          quality: 92,
+          backgroundColor: '#FFFFFF',
+          log,
+        });
+      } catch (e) {
+        // HD export can fail on low-memory devices; fall back to original-size export.
+        if (!isHdSelected) throw e;
+        log('save:hdFallback', { message: e?.message || String(e) });
+        const fallbackSourceUri = usedUpscaledInput ? resultUri : prepared.uri;
+        const fallbackPrepared = usedUpscaledInput
+          ? await prepareLocalAssetUriForSave(fallbackSourceUri, log)
+          : { uri: fallbackSourceUri, cleanupPath: null };
+        if (fallbackPrepared.cleanupPath) cleanupPaths.push(fallbackPrepared.cleanupPath);
+
+        transcoded = await transcodeImageToCache({
+          uri: fallbackPrepared.uri,
+          format,
+          quality: 92,
+          backgroundColor: '#FFFFFF',
+          log,
+        });
+      }
+      if (transcoded.cleanupPath) cleanupPaths.push(transcoded.cleanupPath);
+      log('save:transcoded', { outUri: formatUriForLog(transcoded.uri), mime: transcoded.mime });
 
       // 3.5) Ensure file exists + size (helps catch timing issues)
-      const path = stripFileScheme(prepared.uri);
+      const path = stripFileScheme(transcoded.uri);
       const stat = await RNFS.stat(path);
       log('file:ready', { path, size: stat?.size });
 
-      // 4) Save (after readiness wait)
-      const saved = await saveToCameraRollAfterReady(prepared.uri, log);
+      // 6) Save (after readiness wait)
+      const saved = await saveToCameraRollAfterReady(transcoded.uri, log);
 
       // Different CameraRoll versions return different shapes
       const savedUri =
@@ -391,8 +736,9 @@ export default function ExportScreen({ navigation, route }) {
       }
     } finally {
       setIsSaving(false);
-      if (cleanupPath) {
-        RNFS.unlink(stripFileScheme(cleanupPath)).catch(() => {});
+      for (const p of cleanupPaths) {
+        if (!p) continue;
+        RNFS.unlink(stripFileScheme(p)).catch(() => {});
       }
     }
   };
@@ -400,57 +746,90 @@ export default function ExportScreen({ navigation, route }) {
   const onShare = async () => {
     if (!resultUri) return;
 
-    let cleanupPath = null;
+    const cleanupPaths = [];
     try {
-      const prepared = await prepareLocalAssetUriForSave(resultUri);
-      cleanupPath = prepared.cleanupPath;
+      let inputUri = resultUri;
+      if (isHdSelected) {
+        try {
+          inputUri = await getHdUpscaledUri();
+        } catch (e) {
+          log('share:upscaleFailed', { message: e?.message || String(e) });
+          inputUri = resultUri;
+        }
+      }
+      const usedUpscaledInput = isHdSelected && inputUri !== resultUri;
+
+      const prepared = await prepareLocalAssetUriForSave(inputUri, log);
+      if (prepared.cleanupPath) cleanupPaths.push(prepared.cleanupPath);
+
+      let transcoded;
+      try {
+        transcoded = await transcodeImageToCache({
+          uri: prepared.uri,
+          format,
+          quality: 92,
+          backgroundColor: '#FFFFFF',
+          log,
+        });
+      } catch (e) {
+        if (!isHdSelected) throw e;
+        log('share:hdFallback', { message: e?.message || String(e) });
+        const fallbackSourceUri = usedUpscaledInput ? resultUri : prepared.uri;
+        const fallbackPrepared = usedUpscaledInput
+          ? await prepareLocalAssetUriForSave(fallbackSourceUri, log)
+          : { uri: fallbackSourceUri, cleanupPath: null };
+        if (fallbackPrepared.cleanupPath) cleanupPaths.push(fallbackPrepared.cleanupPath);
+
+        transcoded = await transcodeImageToCache({
+          uri: fallbackPrepared.uri,
+          format,
+          quality: 92,
+          backgroundColor: '#FFFFFF',
+          log,
+        });
+      }
+      if (transcoded.cleanupPath) cleanupPaths.push(transcoded.cleanupPath);
 
       await Share.open({
-        url: prepared.uri,
-        type: 'image/png',
+        url: transcoded.uri,
+        type: transcoded.mime,
         failOnCancel: false,
       });
     } catch {
       // ignore
     } finally {
-      if (cleanupPath) {
-        RNFS.unlink(stripFileScheme(cleanupPath)).catch(() => {});
+      for (const p of cleanupPaths) {
+        if (!p) continue;
+        RNFS.unlink(stripFileScheme(p)).catch(() => {});
       }
     }
   };
 
-  const handleProFeature = () => {
-    Alert.alert('Upgrade to Pro', 'Unlock HD export and more formats!');
-  };
-
-  const handleJpgPress = () => {
-    Alert.alert('Coming soon', 'JPG export will be available after we add conversion.');
-  };
+  const handleProFeature = useCallback(() => {
+    if (isPremium) {
+      didUserChangeResolutionRef.current = true;
+      setResolution('hd');
+      return;
+    }
+    navigation?.navigate?.('Paywall');
+  }, [isPremium, navigation]);
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
       <View style={styles.root}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Pressable
-            onPress={() => navigation?.goBack?.()}
-            style={({ pressed }) => [styles.iconBtn, pressed && styles.pressed]}
-            hitSlop={10}
-          >
-            <ArrowBackIcon size={24} color="#6B7280" />
-          </Pressable>
-
-          <Text style={styles.title}>Export</Text>
-          <View style={styles.headerSpacer} />
-        </View>
-
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
           {/* Image Preview */}
-          <View style={[styles.previewWrap, { width: previewWidth, aspectRatio }]}>
+          <View
+            style={[
+              styles.previewWrap,
+              { width: previewWidth },
+              previewHeight ? { height: previewHeight } : { aspectRatio },
+            ]}
+          >
             <TiledCheckerboard />
 
             <View style={styles.previewInner}>
@@ -462,9 +841,12 @@ export default function ExportScreen({ navigation, route }) {
             </View>
 
             <View style={styles.infoPill}>
-              <TransparentIcon size={16} color="#fff" />
+              {format === 'png' ? <TransparentIcon size={16} color="#fff" /> : <BackgroundIcon size={16} color="#fff" />}
               <Text style={styles.infoPillText}>
-                PNG • {resultWidth}x{resultHeight}
+                {format.toUpperCase()} •{' '}
+                {isHdSelected
+                  ? `HD${hdUpscaleFactor > 1 ? ` ×${hdUpscaleFactor}` : ''}`
+                  : `${effectiveWidth}x${effectiveHeight}`}
               </Text>
             </View>
           </View>
@@ -477,16 +859,22 @@ export default function ExportScreen({ navigation, route }) {
               title="PNG"
               subtitle="Transparent"
               iconName="png"
-              onPress={() => setFormat('png')}
+              onPress={() => {
+                didUserChangeFormatRef.current = true;
+                setFormat('png');
+              }}
             />
 
             <FormatCard
-              active={false}
-              disabled={JPG_DISABLED}
+              active={format === 'jpg'}
+              disabled={false}
               title="JPG"
-              subtitle="Coming soon"
+              subtitle="Smaller • No transparency"
               iconName="jpg"
-              onPress={JPG_DISABLED ? handleJpgPress : () => setFormat('jpg')}
+              onPress={() => {
+                didUserChangeFormatRef.current = true;
+                setFormat('jpg');
+              }}
             />
           </View>
 
@@ -495,34 +883,37 @@ export default function ExportScreen({ navigation, route }) {
           <ResolutionCard
             active={resolution === 'original'}
             title="Original"
-            subtitle={`${resultWidth} x ${resultHeight} px`}
-            onPress={() => setResolution('original')}
+            subtitle={`${effectiveWidth} x ${effectiveHeight} px`}
+            onPress={() => {
+              didUserChangeResolutionRef.current = true;
+              setResolution('original');
+            }}
           />
           <ResolutionCardPro
             active={resolution === 'hd'}
-            title="Ultra HD"
-            subtitle="4000 x 5000 px • Print Ready"
+            title="HD Upscale"
+            subtitle="AI Upscale • Better quality"
             onPress={handleProFeature}
           />
 
           {/* Pro Upgrade Card */}
-          <View style={styles.upgradeCard}>
-            <View style={styles.upgradeGlow} />
-            <View style={styles.upgradeRow}>
-              <View style={styles.upgradeCopy}>
-                <Text style={styles.upgradeTitle}>Upgrade for HD export</Text>
-                <Text style={styles.upgradeText}>
-                  Get 4K resolution exports and remove watermarks.
-                </Text>
+          {!isPremium ? (
+            <View style={styles.upgradeCard}>
+              <View style={styles.upgradeGlow} />
+              <View style={styles.upgradeRow}>
+                <View style={styles.upgradeCopy}>
+                  <Text style={styles.upgradeTitle}>Upgrade for HD export</Text>
+                  <Text style={styles.upgradeText}>Get AI-upscaled exports and remove watermarks.</Text>
+                </View>
+                <Pressable
+                  onPress={handleProFeature}
+                  style={({ pressed }) => [styles.tryProBtn, pressed && styles.pressed]}
+                >
+                  <Text style={styles.tryProText}>Try Pro</Text>
+                </Pressable>
               </View>
-              <Pressable
-                onPress={handleProFeature}
-                style={({ pressed }) => [styles.tryProBtn, pressed && styles.pressed]}
-              >
-                <Text style={styles.tryProText}>Try Pro</Text>
-              </Pressable>
             </View>
-          </View>
+          ) : null}
 
           {/* Actions */}
           <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) + 18 }]}>

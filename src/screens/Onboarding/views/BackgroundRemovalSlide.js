@@ -1,9 +1,17 @@
 import * as React from 'react';
-import { Animated, Image, Platform, StyleSheet, Text, useColorScheme, useWindowDimensions, View } from 'react-native';
+import {
+  Animated,
+  Image,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ProcessingMagicIcon } from '../../../components/icons';
 import TransparencyGrid from '../components/TransparencyGrid';
+import OnboardingHeroCard from '../components/OnboardingHeroCard';
 
 const PRIMARY = '#2e69ff';
 
@@ -11,16 +19,23 @@ const DEFAULT_SUBJECT = {
   uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuB1Eue8hpNjTzwc_0ZO0L4UBOSgWzKVflJjK0q-4QqXlgufgo3_F3BaZlfqgB9SeTmCDn_-Qkc5yf7CGJa8XfH5a_Ar-PBbULDChEkftZbRCPmbKbK8pCQCnWuHJqW_Do2aXloif_5n6wObJ1dQEdYm_BwV1H_FeEb4oWRQnDHHLRUhY_yjUNVaEDjDu8joV77LQxV3TUK0MRQKg2XKI-G06tAugYbnXdMHb2svF7CLPmKOe-yJbkWKf7qgaL-Ayiy_pj_NkxmnIu5l',
 };
 
-export default function BackgroundRemovalSlide({ index, animationController, subjectSource = DEFAULT_SUBJECT }) {
-  const scheme = useColorScheme();
-  const isDark = scheme === 'dark';
-  const insets = useSafeAreaInsets();
-  const { width, height } = useWindowDimensions();
+export default function BackgroundRemovalSlide({
+  index,
+  animationController,
+  subjectSource = DEFAULT_SUBJECT,
+  layout,
+  isActive = false,
+}) {
+  const isDark = false;
+  const isCompact = layout?.isCompact;
 
-  const slideX = Animated.multiply(Animated.subtract(index, animationController.current), width);
+  const titleFontSize = Math.round((isCompact ? 28 : 30) * layout.fontScale);
+  const titleLineHeight = Math.round((isCompact ? 34 : 36) * layout.fontScale);
+  const subtitleFontSize = Math.round((isCompact ? 15 : 16) * layout.fontScale);
+  const subtitleLineHeight = Math.round((isCompact ? 22 : 24) * layout.fontScale);
 
   const opacity = animationController.current.interpolate({
-    inputRange: [index - 0.6, index, index + 0.6],
+    inputRange: [index - 1, index, index + 1],
     outputRange: [0, 1, 0],
     extrapolate: 'clamp',
   });
@@ -37,10 +52,11 @@ export default function BackgroundRemovalSlide({ index, animationController, sub
     extrapolate: 'clamp',
   });
 
-  const cardWidth = Math.min(width - 36, 410);
-  const fullCardHeight = cardWidth * (5 / 4);
-  const cardHeight = Math.max(260, Math.min(fullCardHeight, height * 0.52));
-  const scanRange = Math.max(70, cardHeight * 0.28);
+  const topPad = layout.topPad;
+  const bottomPad = layout.bottomPad;
+  const heroWidth = layout.heroWidth;
+  const heroHeight = layout.heroHeight;
+  const scanRange = Math.max(70, heroHeight * 0.28);
 
   const badgeAnim = React.useRef(new Animated.Value(0)).current;
   const scanAnim = React.useRef(new Animated.Value(0)).current;
@@ -74,76 +90,103 @@ export default function BackgroundRemovalSlide({ index, animationController, sub
   const gridLight = isDark ? '#374151' : '#F3F4F6';
   const gridDark = isDark ? '#1F2937' : '#E5E7EB';
 
+  const [contentHeight, setContentHeight] = React.useState(0);
+  const scrollEnabled = contentHeight > layout.height + 1;
+
   return (
-    <Animated.View style={[styles.root, { transform: [{ translateX: slideX }], opacity }]}>
-      <View style={[styles.inner, { paddingTop: Math.max(24, insets.top + 76), paddingBottom: insets.bottom + 140 }]}>
-        <Animated.View style={{ transform: [{ translateY: contentTY }] }}>
-          <View
+    <Animated.View pointerEvents={isActive ? 'auto' : 'none'} style={[styles.root, { opacity }]}>
+      <ScrollView
+        style={styles.scroll} // ✅ important: fixes weird width / horizontal drift
+        contentContainerStyle={[styles.scrollContent, { paddingTop: topPad, paddingBottom: bottomPad }]}
+        onContentSizeChange={(_, h) => setContentHeight(h)}
+        scrollEnabled={isActive && scrollEnabled}
+        showsVerticalScrollIndicator={false}
+        showsHorizontalScrollIndicator={false} // ✅
+        horizontal={false} // ✅ explicit
+        bounces={false}
+        alwaysBounceVertical={false}
+        alwaysBounceHorizontal={false} // ✅ iOS horizontal bounce OFF
+        directionalLockEnabled // ✅ iOS lock to one direction
+        overScrollMode="never" // ✅ Android
+      >
+        <View style={[styles.inner, { maxWidth: layout.maxWidth, paddingHorizontal: layout.sidePadding }]}>
+          <Animated.View style={{ transform: [{ translateY: contentTY }] }}>
+            <OnboardingHeroCard
+              width={heroWidth}
+              height={heroHeight}
+              backgroundColor={isDark ? '#0F1523' : '#FFFFFF'}
+              borderColor={isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.06)'}
+            >
+              <TransparencyGrid size={20} light={gridLight} dark={gridDark} style={StyleSheet.absoluteFill} />
+
+              <LinearGradient pointerEvents="none" colors={[`${PRIMARY}10`, 'transparent']} style={StyleSheet.absoluteFill} />
+
+              <Animated.View style={[styles.subjectWrap, { transform: [{ scale: subjectScale }] }]}>
+                <View style={styles.subjectShadow}>
+                  <Image source={subjectSource} style={styles.subjectImage} resizeMode="contain" />
+                </View>
+              </Animated.View>
+
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  styles.scanLine,
+                  {
+                    backgroundColor: `${PRIMARY}80`,
+                    transform: [{ translateY: scanTY }],
+                    opacity: scanOpacity,
+                  },
+                ]}
+              />
+
+              <Animated.View
+                style={[
+                  styles.badge,
+                  {
+                    transform: [{ translateY: badgeTY }],
+                    backgroundColor: isDark ? 'rgba(17,24,39,0.88)' : 'rgba(255,255,255,0.92)',
+                    borderColor: isDark ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.65)',
+                  },
+                ]}
+              >
+                <ProcessingMagicIcon size={22} color={PRIMARY} />
+              </Animated.View>
+            </OnboardingHeroCard>
+          </Animated.View>
+
+          <Animated.View
             style={[
-              styles.card,
-              {
-                width: cardWidth,
-                height: cardHeight,
-                backgroundColor: isDark ? '#0F1523' : '#FFFFFF',
-                borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.06)',
-              },
+              styles.textBlock,
+              { transform: [{ translateY: contentTY }], maxWidth: layout.maxWidth, paddingHorizontal: layout.sidePadding },
             ]}
           >
-            <TransparencyGrid
-              size={20}
-              light={gridLight}
-              dark={gridDark}
-              style={StyleSheet.absoluteFill}
-            />
-
-            <LinearGradient
-              pointerEvents="none"
-              colors={[`${PRIMARY}10`, 'transparent']}
-              style={StyleSheet.absoluteFill}
-            />
-
-            <Animated.View style={[styles.subjectWrap, { transform: [{ scale: subjectScale }] }]}>
-              <View style={styles.subjectShadow}>
-                <Image source={subjectSource} style={styles.subjectImage} resizeMode="contain" />
-              </View>
-            </Animated.View>
-
-            <Animated.View
-              pointerEvents="none"
+            <Text
               style={[
-                styles.scanLine,
+                styles.title,
                 {
-                  backgroundColor: `${PRIMARY}80`,
-                  transform: [{ translateY: scanTY }],
-                  opacity: scanOpacity,
-                },
-              ]}
-            />
-
-            <Animated.View
-              style={[
-                styles.badge,
-                {
-                  transform: [{ translateY: badgeTY }],
-                  backgroundColor: isDark ? 'rgba(17,24,39,0.88)' : 'rgba(255,255,255,0.92)',
-                  borderColor: isDark ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.65)',
+                  color: isDark ? '#FFFFFF' : '#101318',
+                  fontSize: titleFontSize,
+                  lineHeight: titleLineHeight,
                 },
               ]}
             >
-              <ProcessingMagicIcon size={22} color={PRIMARY} />
-            </Animated.View>
-          </View>
-        </Animated.View>
-
-        <View style={styles.spacer} />
-
-        <Animated.View style={[styles.textBlock, { transform: [{ translateY: contentTY }] }]}>
-          <Text style={[styles.title, { color: isDark ? '#FFFFFF' : '#111827' }]}>Instant Background Removal</Text>
-          <Text style={[styles.subtitle, { color: isDark ? 'rgba(255,255,255,0.72)' : '#6B7280' }]}>
-            Turn any photo into a professional asset. Our AI detects subjects and erases the rest in seconds.
-          </Text>
-        </Animated.View>
-      </View>
+              Instant Background Removal
+            </Text>
+            <Text
+              style={[
+                styles.subtitle,
+                {
+                  color: isDark ? 'rgba(255,255,255,0.72)' : '#6B7280',
+                  fontSize: subtitleFontSize,
+                  lineHeight: subtitleLineHeight,
+                },
+              ]}
+            >
+              Turn any photo into a professional asset. Our AI detects subjects and erases the rest in seconds.
+            </Text>
+          </Animated.View>
+        </View>
+      </ScrollView>
     </Animated.View>
   );
 }
@@ -154,32 +197,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+
+  // ✅ this is important to avoid any width weirdness
+  scroll: { width: '100%' },
+
+  scrollContent: { flexGrow: 1, width: '100%', alignItems: 'center' },
   inner: {
     width: '100%',
-    maxWidth: 430,
     flex: 1,
     alignItems: 'center',
-    paddingHorizontal: 18,
+    justifyContent: 'flex-start',
   },
-  card: {
-    borderRadius: 28,
-    overflow: 'hidden',
-    borderWidth: 1,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOpacity: 0.14,
-        shadowRadius: 18,
-        shadowOffset: { width: 0, height: 12 },
-      },
-      android: { elevation: 6 },
-    }),
-  },
+
   subjectWrap: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 22,
+    padding: 18,
   },
   subjectShadow: {
     width: '100%',
@@ -200,9 +234,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 16,
     right: 16,
-    width: 46,
-    height: 46,
-    borderRadius: 18,
+    width: 42,
+    height: 42,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
@@ -220,9 +254,14 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 0 },
   },
 
-  spacer: { flex: 1, minHeight: 18 },
-  textBlock: { width: '100%', alignItems: 'center' },
-  title: { fontSize: 30, fontWeight: '900', textAlign: 'center', letterSpacing: -0.6, marginBottom: 10 },
+  textBlock: { width: '100%', alignItems: 'center', paddingTop: 12 },
+  title: {
+    fontSize: 30,
+    fontWeight: '900',
+    textAlign: 'center',
+    letterSpacing: -0.6,
+    lineHeight: 36,
+    marginBottom: 8,
+  },
   subtitle: { textAlign: 'center', fontSize: 16, lineHeight: 24, maxWidth: 330 },
 });
-

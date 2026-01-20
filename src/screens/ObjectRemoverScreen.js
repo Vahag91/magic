@@ -2,18 +2,26 @@ import * as React from 'react';
 import { View, Text, StyleSheet, Image, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, common } from '../styles';
-import { SimpleHeader } from '../components';
+import { useError } from '../providers/ErrorProvider';
 import MaskCanvasSkia from '../components/MaskCanvasSkia';
 import BrushToolbar from '../components/BrushToolbar';
 import LoadingOverlay from '../components/LoadingOverlay';
-import { exportMaskToDataUri } from '../lib/objectRemoval/maskExport';
+import { GEMINI_API_KEY } from '../config/gemini';
 import { getRunwareSafeSize } from '../lib/objectRemoval/runwareSize';
-import { resizeSeedToDataUri } from '../lib/objectRemoval/seedResize';
+import { exportMaskToDataUri } from '../lib/objectRemoval/maskExport';
+import { resizeSeedToDataUri, resizeSeedToFileUri } from '../lib/objectRemoval/seedResize';
+import { exportMarkedImageToDataUri } from '../lib/objectRemoval/markedExport';
+import { removeObjectWithGeminiInpainting } from '../api/removeObjectGemini';
 import { removeObjectRunware } from '../api/removeObjectRunware';
 import { CANVAS_WIDTH } from './BackgroundEditor/styles';
 
 const TEXT = colors.text || '#111827';
 const SUB = colors.muted || '#6B7280';
+
+function logIf(debug, ...args) {
+  if (!debug) return;
+  console.log('[ObjectRemover]', ...args);
+}
 
 function strokeInkScore(strokes) {
   const list = Array.isArray(strokes) ? strokes : [];
@@ -41,11 +49,28 @@ function strokeInkScore(strokes) {
 }
 
 export default function ObjectRemoverScreen({ navigation, route }) {
+  const { showError, showAppError } = useError();
   const insets = useSafeAreaInsets();
 
   const imageUri = route?.params?.imageUri || null;
+  const mimeType = route?.params?.mimeType || null;
+  const exifOrientation = route?.params?.exifOrientation || null;
   const paramW = Number(route?.params?.width) || 0;
   const paramH = Number(route?.params?.height) || 0;
+
+  React.useEffect(() => {
+    const debugLogs = typeof __DEV__ !== 'undefined' && __DEV__;
+    logIf(debugLogs, 'route:params', {
+      imageUri,
+      mimeType,
+      exifOrientation,
+      width: paramW || null,
+      height: paramH || null,
+    });
+  }, [exifOrientation, imageUri, mimeType, paramH, paramW]);
+
+  const [effectiveUri, setEffectiveUri] = React.useState(imageUri);
+  const [isPreparingInput, setIsPreparingInput] = React.useState(true);
 
   const [imageSize, setImageSize] = React.useState({
     width: paramW,
@@ -60,30 +85,43 @@ export default function ObjectRemoverScreen({ navigation, route }) {
 
   const [isWorking, setIsWorking] = React.useState(false);
   const [workingText, setWorkingText] = React.useState('Removing object…');
+  const [requestPreview, setRequestPreview] = React.useState(null);
   const abortRef = React.useRef(null);
 
   React.useEffect(() => {
     if (!imageUri) return;
-
     let alive = true;
-    Image.getSize(
-      imageUri,
-      (width, height) => {
+
+    setIsPreparingInput(true);
+    setEffectiveUri(imageUri);
+
+    (async () => {
+      try {
+        // Keep the original camera/library photo as-is. Do not rotate/re-encode here.
+        Image.getSize(
+          imageUri,
+          (width, height) => {
+            if (!alive) return;
+            setImageSize({ width, height });
+            setIsPreparingInput(false);
+          },
+          () => {
+            if (!alive) return;
+            setIsPreparingInput(false);
+            showError();
+          },
+        );
+      } catch {
         if (!alive) return;
-        setImageSize((prev) => {
-          if (prev?.width === width && prev?.height === height) return prev;
-          return { width, height };
-        });
-      },
-      () => {
-        if (!alive) return;
-        Alert.alert('Remove Object', 'Could not load image size.');
-      },
-    );
+        setIsPreparingInput(false);
+        setEffectiveUri(imageUri);
+      }
+    })();
+
     return () => {
       alive = false;
     };
-  }, [imageUri, paramH, paramW]);
+  }, [exifOrientation, imageUri, mimeType, showError]);
 
   React.useEffect(() => {
     return () => abortRef.current?.abort?.();
@@ -160,9 +198,16 @@ export default function ObjectRemoverScreen({ navigation, route }) {
     ]);
   }, [isWorking, navigation]);
 
+  React.useLayoutEffect(() => {
+    navigation.setOptions({
+      headerBackOnPress: onBack,
+      headerBackVisible: true,
+    });
+  }, [navigation, onBack]);
+
   const onSubmit = React.useCallback(async () => {
     if (isWorking) return;
-    if (!imageUri) return;
+    if (!effectiveUri) return;
     if (!canSubmit) {
       Alert.alert('Remove Object', 'Paint over the object you want to remove.');
       return;
@@ -185,61 +230,115 @@ export default function ObjectRemoverScreen({ navigation, route }) {
 
     setIsWorking(true);
     setWorkingText('Preparing image…');
+    setRequestPreview(null);
 
     try {
-      const seedDataUri = await resizeSeedToDataUri({
-        uri: imageUri,
-        sourceWidth: srcW,
-        sourceHeight: srcH,
-        targetWidth: target.width,
-        targetHeight: target.height,
+      const hasGeminiKey = Boolean(String(GEMINI_API_KEY || '').trim());
+      const debugLogs = typeof __DEV__ !== 'undefined' && __DEV__;
+
+      logIf(debugLogs, 'submit', {
+        provider: hasGeminiKey ? 'gemini' : 'runware',
+        srcW,
+        srcH,
+        targetW: target.width,
+        targetH: target.height,
+        strokes: strokes.length,
+        mimeType,
       });
 
-      if (controller.signal.aborted) return;
+      if (hasGeminiKey) {
+        const resized = await resizeSeedToFileUri({
+          uri: effectiveUri,
+          sourceWidth: srcW,
+          sourceHeight: srcH,
+          targetWidth: target.width,
+          targetHeight: target.height,
+          format: 'png',
+        });
 
-      setWorkingText('Exporting mask…');
-      const maskDataUri = exportMaskToDataUri({
-        strokes,
-        width: target.width,
-        height: target.height,
-        sourceWidth: srcW,
-        sourceHeight: srcH,
-      });
+        if (controller.signal.aborted) return;
 
-      setWorkingText('Removing object…');
-      const imageURL = await removeObjectRunware({
-        seedUri: seedDataUri,
-        maskDataUri,
-        width: target.width,
-        height: target.height,
-        signal: controller.signal,
-      });
+        setWorkingText('Marking selection…');
+        const markedDataUri = await exportMarkedImageToDataUri({
+          seedResizedUri: resized.uri,
+          strokes,
+          width: target.width,
+          height: target.height,
+          sourceWidth: srcW,
+          sourceHeight: srcH,
+        });
 
-      if (!imageURL) return;
+        setWorkingText('Removing object…');
+        setRequestPreview({ imageUri: markedDataUri });
+        const resultUri = await removeObjectWithGeminiInpainting({
+          markedImageBase64: markedDataUri,
+          mimeType: 'image/png',
+          debug: debugLogs,
+        });
 
-      navigation.navigate('Export', {
-        resultUri: imageURL,
-        width: target.width,
-        height: target.height,
-        canvasDisplayWidth: CANVAS_WIDTH,
-      });
+        if (!resultUri) return;
+
+        navigation.navigate('Export', {
+          resultUri,
+          width: target.width,
+          height: target.height,
+          canvasDisplayWidth: CANVAS_WIDTH,
+        });
+      } else {
+        const seedDataUri = await resizeSeedToDataUri({
+          uri: effectiveUri,
+          sourceWidth: srcW,
+          sourceHeight: srcH,
+          targetWidth: target.width,
+          targetHeight: target.height,
+        });
+
+        if (controller.signal.aborted) return;
+
+        setWorkingText('Exporting mask…');
+        const maskDataUri = exportMaskToDataUri({
+          strokes,
+          width: target.width,
+          height: target.height,
+          sourceWidth: srcW,
+          sourceHeight: srcH,
+        });
+
+        setWorkingText('Removing object…');
+        setRequestPreview({ imageUri: seedDataUri, maskUri: maskDataUri });
+        const imageURL = await removeObjectRunware({
+          seedUri: seedDataUri,
+          maskDataUri,
+          width: target.width,
+          height: target.height,
+          signal: controller.signal,
+        });
+
+        if (!imageURL) return;
+
+        navigation.navigate('Export', {
+          resultUri: imageURL,
+          width: target.width,
+          height: target.height,
+          canvasDisplayWidth: CANVAS_WIDTH,
+        });
+      }
     } catch (e) {
       if (e?.name !== 'AbortError') {
-        Alert.alert('Remove Object', e?.message || 'Something went wrong.');
+        showAppError(e, { retry: onSubmit, retryLabel: 'Try again' });
       }
     } finally {
       abortRef.current = null;
       setIsWorking(false);
+      setRequestPreview(null);
     }
-  }, [canSubmit, imageSize.height, imageSize.width, imageUri, isWorking, navigation, strokes]);
+  }, [canSubmit, effectiveUri, imageSize.height, imageSize.width, isWorking, mimeType, navigation, showAppError, strokes]);
 
-  const showSizeLoader = !imageSize.width || !imageSize.height;
+  const showSizeLoader = isPreparingInput || !imageSize.width || !imageSize.height;
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
       <View style={styles.root}>
-        <SimpleHeader title="Remove Object" onBack={onBack} />
-
         <View style={styles.content}>
           {!imageUri ? (
             <View style={styles.center}>
@@ -249,20 +348,20 @@ export default function ObjectRemoverScreen({ navigation, route }) {
           ) : showSizeLoader ? (
             <View style={styles.center}>
               <ActivityIndicator />
-              <Text style={styles.sub}>Loading image…</Text>
+              <Text style={styles.sub}>{isPreparingInput ? 'Preparing image…' : 'Loading image…'}</Text>
             </View>
           ) : (
             <>
               <View style={styles.previewWrap}>
                 <MaskCanvasSkia
-                  imageUri={imageUri}
+                  imageUri={effectiveUri}
                   imageWidth={imageSize.width}
                   imageHeight={imageSize.height}
                   brushSize={brushSize}
                   mode={mode}
                   strokes={strokes}
                   setStrokes={addStroke}
-                  disabled={isWorking}
+                  disabled={isWorking || isPreparingInput}
                 />
               </View>
 
@@ -289,7 +388,7 @@ export default function ObjectRemoverScreen({ navigation, route }) {
           bottomInset={insets.bottom}
         />
 
-        <LoadingOverlay visible={isWorking} message={workingText} />
+        <LoadingOverlay visible={isWorking} message={workingText} preview={requestPreview} />
       </View>
     </SafeAreaView>
   );

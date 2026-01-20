@@ -17,6 +17,9 @@ import { decode as base64Decode } from 'base-64';
 import { ImageFormat, Skia } from '@shopify/react-native-skia';
 import RNFS from 'react-native-fs';
 import { supabase } from '../services/supabaseClient';
+import { common } from '../styles';
+import { useError } from '../providers/ErrorProvider';
+import { createAppError } from '../lib/errors';
 
 // If you have these icons, use them. Otherwise, the code falls back to text.
 import { ProcessingMagicIcon } from '../components/icons';
@@ -285,6 +288,7 @@ async function downloadCutoutToCache(url) {
 
 // -------------------- main --------------------
 export default function RemoveBackgroundProcessingScreen({ navigation, route }) {
+  const { showAppError } = useError();
   const imageUri = route?.params?.imageUri || null;
   const base64 = route?.params?.base64 || null;
   const mime = normalizeMime(route?.params?.mime) || null;
@@ -296,22 +300,22 @@ export default function RemoveBackgroundProcessingScreen({ navigation, route }) 
   // Progress + status
   const steps = React.useMemo(
     () => [
-      { key: 'detect', title: 'Detecting subject', sub: 'Finding the main object in your photo.' },
-      { key: 'prep', title: 'Preparing', sub: 'Optimizing edges for best cutout.' },
-      { key: 'remove', title: 'Removing background', sub: 'AI is separating foreground and background.' },
-      { key: 'finish', title: 'Finalizing', sub: 'Cleaning edges and exporting PNG.' },
+      { key: 'detect', title: 'Detecting subject' },
+      { key: 'prep', title: 'Preparing' },
+      { key: 'remove', title: 'Removing background' },
+      { key: 'finish', title: 'Finalizing' },
     ],
     []
   );
 
   const [statusTitle, setStatusTitle] = React.useState(steps[0].title);
-  const [statusSub, setStatusSub] = React.useState(steps[0].sub);
   const [stepIndex, setStepIndex] = React.useState(0);
   const [isWorking, setIsWorking] = React.useState(true);
   const [percent, setPercent] = React.useState(6);
 
-  const startedRef = React.useRef(false);
   const canceledRef = React.useRef(false);
+  const [runId, setRunId] = React.useState(0);
+  const processedRunIdRef = React.useRef(null);
 
   // Anim values
   const progressA = React.useRef(new Animated.Value(0.06)).current; // 0..1
@@ -321,6 +325,16 @@ export default function RemoveBackgroundProcessingScreen({ navigation, route }) 
   const iconBob = React.useRef(new Animated.Value(0)).current;
 
   const [cardSize, setCardSize] = React.useState({ w: 0, h: 0 });
+
+  const retry = React.useCallback(() => {
+    canceledRef.current = false;
+    setStatusTitle(steps[0].title);
+    setStepIndex(0);
+    setPercent(6);
+    setIsWorking(true);
+    progressA.setValue(0.06);
+    setRunId((prev) => prev + 1);
+  }, [progressA, steps]);
 
   // -------------------- animations --------------------
   React.useEffect(() => {
@@ -395,7 +409,6 @@ export default function RemoveBackgroundProcessingScreen({ navigation, route }) 
       if (nextStep !== stepIndex) {
         setStepIndex(nextStep);
         setStatusTitle(steps[nextStep].title);
-        setStatusSub(steps[nextStep].sub);
       }
 
       setPercent(Math.round(value * 100));
@@ -405,6 +418,7 @@ export default function RemoveBackgroundProcessingScreen({ navigation, route }) 
 
   // Fake progress to 90% while network runs
   React.useEffect(() => {
+    progressA.setValue(0.06);
     const anim = Animated.timing(progressA, {
       toValue: 0.92,
       duration: 5200,
@@ -413,12 +427,12 @@ export default function RemoveBackgroundProcessingScreen({ navigation, route }) 
     });
     anim.start();
     return () => anim.stop();
-  }, [progressA]);
+  }, [progressA, runId]);
 
   // -------------------- processing --------------------
   React.useEffect(() => {
-    if (startedRef.current) return;
-    startedRef.current = true;
+    if (processedRunIdRef.current === runId) return;
+    processedRunIdRef.current = runId;
 
     if (!imageUri && !base64) {
       Alert.alert('No image', 'Please select an image first.');
@@ -428,6 +442,7 @@ export default function RemoveBackgroundProcessingScreen({ navigation, route }) 
 
     (async () => {
       try {
+        canceledRef.current = false;
         setIsWorking(true);
 
         const inputDims = await getImageSizeAsync(previewUri).catch(() => null);
@@ -451,7 +466,7 @@ export default function RemoveBackgroundProcessingScreen({ navigation, route }) 
         });
 
         if (canceledRef.current) return;
-        if (error) throw new Error(error.message || 'Background removal failed.');
+        if (error) throw createAppError('background_removal_failed', { cause: error });
 
         const outUrl = data?.images?.[0]?.url || data?.imageUrl || data?.url;
         if (!outUrl) throw new Error('No output image returned.');
@@ -523,14 +538,16 @@ export default function RemoveBackgroundProcessingScreen({ navigation, route }) 
       } catch (e) {
         if (canceledRef.current) return;
         setIsWorking(false);
-        Alert.alert('Error', e?.message || 'Something went wrong.', [
-          { text: 'Back', onPress: () => navigation.goBack() },
-        ]);
+        showAppError(e, { retry, retryLabel: 'Try again' });
       }
     })();
-  }, [navigation, imageUri, base64, mime, previewUri, progressA]);
+  }, [navigation, imageUri, base64, mime, previewUri, progressA, retry, runId, showAppError]);
 
   const onCancel = React.useCallback(() => {
+    if (!isWorking) {
+      navigation.goBack();
+      return;
+    }
     Alert.alert('Cancel processing?', 'Your cutout won’t be generated.', [
       { text: 'Keep waiting', style: 'cancel' },
       {
@@ -542,7 +559,26 @@ export default function RemoveBackgroundProcessingScreen({ navigation, route }) 
         },
       },
     ]);
-  }, [navigation]);
+  }, [isWorking, navigation]);
+
+  const onHelp = React.useCallback(() => {
+    Alert.alert(
+      'Background Removal',
+      'We process your photo on the server and return a transparent PNG cutout. This usually takes a few seconds.',
+    );
+  }, []);
+
+  React.useLayoutEffect(() => {
+    navigation.setOptions({
+      headerBackOnPress: onCancel,
+      headerBackVisible: true,
+      headerRight: () => (
+        <TouchableOpacity onPress={onHelp} style={common.headerBtn} activeOpacity={0.85}>
+          <Text style={styles.help}>?</Text>
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation, onCancel, onHelp]);
 
   // -------------------- derived anim styles --------------------
   const progressWidth = progressA.interpolate({
@@ -584,7 +620,7 @@ export default function RemoveBackgroundProcessingScreen({ navigation, route }) 
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
       <StatusBar barStyle="dark-content" backgroundColor={BG} />
 
       {/* Soft background accents */}
@@ -592,33 +628,6 @@ export default function RemoveBackgroundProcessingScreen({ navigation, route }) 
       <View pointerEvents="none" style={styles.bgBlobB} />
 
       <View style={styles.container}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onCancel} style={styles.headerBtn} activeOpacity={0.85}>
-            <Text style={styles.chev}>‹</Text>
-          </TouchableOpacity>
-
-          <View style={styles.headerCenter}>
-            <View style={styles.livePill}>
-              <View style={styles.liveDot} />
-              <Text style={styles.liveText}>Connected</Text>
-            </View>
-          </View>
-
-          <TouchableOpacity
-            onPress={() => {
-              Alert.alert(
-                'Background Removal',
-                'We process your photo on the server and return a transparent PNG cutout. This usually takes a few seconds.'
-              );
-            }}
-            style={styles.headerBtn}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.help}>?</Text>
-          </TouchableOpacity>
-        </View>
-
         {/* Hero */}
         <View style={styles.hero}>
           <View style={styles.heroLeft}>
@@ -638,9 +647,6 @@ export default function RemoveBackgroundProcessingScreen({ navigation, route }) 
 
             <View style={{ flex: 1 }}>
               <Text style={styles.hTitle}>Removing Background</Text>
-              <Text style={styles.hSub} numberOfLines={2}>
-                {statusSub}
-              </Text>
             </View>
           </View>
 
@@ -690,9 +696,6 @@ export default function RemoveBackgroundProcessingScreen({ navigation, route }) 
           <View style={styles.cardBottom}>
             <Text style={styles.cardTitle} numberOfLines={1}>
               {statusTitle}
-            </Text>
-            <Text style={styles.cardTip} numberOfLines={1}>
-              Keep app open — we’ll send you to the editor automatically
             </Text>
           </View>
 
@@ -764,50 +767,7 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     alignItems: 'center',
   },
-
-  header: {
-    width: '100%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 10,
-  },
-  headerCenter: { flex: 1, alignItems: 'center' },
-  headerBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 999,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: BORDER,
-    ...Platform.select({
-      ios: { shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 8 } },
-      android: { elevation: 2 },
-    }),
-  },
-  chev: { fontSize: 30, color: TEXT, marginTop: Platform.select({ ios: -3, android: -2 }) },
   help: { fontSize: 18, fontWeight: '900', color: TEXT },
-
-  livePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    height: 30,
-    borderRadius: 999,
-    backgroundColor: '#EEF2FF',
-    borderWidth: 1,
-    borderColor: '#E0E7FF',
-  },
-  liveDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 999,
-    backgroundColor: '#10B981',
-  },
-  liveText: { fontSize: 12, fontWeight: '900', color: '#1D4ED8' },
 
   hero: {
     width: '100%',
@@ -838,7 +798,6 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.12)',
   },
   hTitle: { fontSize: 18, fontWeight: '900', color: TEXT },
-  hSub: { marginTop: 2, fontSize: 12.5, fontWeight: '700', color: SUB, lineHeight: 16 },
 
   heroRight: { alignItems: 'flex-end', paddingLeft: 10 },
   percentText: { fontSize: 18, fontWeight: '900', color: TEXT },
@@ -933,7 +892,6 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.22)',
   },
   cardTitle: { fontSize: 13, fontWeight: '900', color: TEXT },
-  cardTip: { marginTop: 3, fontSize: 11.5, fontWeight: '800', color: SUB },
 
   stepsRow: {
     width: CARD_W,

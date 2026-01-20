@@ -8,7 +8,10 @@ import {
   PanResponder,
   TextInput,
   Image,
+  Keyboard,
+  Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // --- Icons (Placeholders for your existing icon imports) ---
 import BlurIcon from '../../components/icons/BlurIcon';
@@ -23,11 +26,12 @@ import { styles, SHEET_MIN_HEIGHT, SHEET_MAX_HEIGHT } from './styles';
 import ColorPicker, { HueSlider, Panel1, Preview, Swatches } from 'reanimated-color-picker';
 
 const EditorSheet = (props) => {
+  const insets = useSafeAreaInsets();
   const [activeSubTab, setActiveSubTab] = useState('main');
-  const [magicPrompt, setMagicPrompt] = useState('');
   const [gradientStop, setGradientStop] = useState('start'); // start | end
   const sheetHeight = useRef(new Animated.Value(SHEET_MIN_HEIGHT)).current;
   const lastHeight = useRef(SHEET_MIN_HEIGHT);
+  const sheetTranslateY = useRef(new Animated.Value(0)).current;
   const textInputRef = useRef(null);
 
   useEffect(() => {
@@ -37,6 +41,39 @@ const EditorSheet = (props) => {
     const id = requestAnimationFrame(() => textInputRef.current?.focus?.());
     return () => cancelAnimationFrame(id);
   }, [props.activeLayer, props.selectedTextId, props.textFocusToken]);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      const h = Number(e?.endCoordinates?.height) || 0;
+      const offset = Math.max(0, h - (insets?.bottom || 0));
+      Animated.timing(sheetTranslateY, {
+        toValue: -offset,
+        duration: Number(e?.duration) || 220,
+        useNativeDriver: true,
+      }).start();
+    });
+
+    const hideSub = Keyboard.addListener(hideEvent, (e) => {
+      Animated.timing(sheetTranslateY, {
+        toValue: 0,
+        duration: Number(e?.duration) || 200,
+        useNativeDriver: true,
+      }).start();
+    });
+
+    return () => {
+      showSub?.remove?.();
+      hideSub?.remove?.();
+    };
+  }, [insets?.bottom, sheetTranslateY]);
+
+  const openSubTab = (tab) => {
+    Keyboard.dismiss();
+    setActiveSubTab(tab);
+  };
 
   const activeGradientColor = useMemo(() => {
     if (gradientStop === 'end') return props.gradientEndColor;
@@ -68,6 +105,9 @@ const EditorSheet = (props) => {
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        Keyboard.dismiss();
+      },
       onPanResponderMove: (_, gestureState) => {
         let newHeight = lastHeight.current - gestureState.dy;
         if (newHeight < SHEET_MIN_HEIGHT) newHeight = SHEET_MIN_HEIGHT;
@@ -85,7 +125,8 @@ const EditorSheet = (props) => {
   ).current;
 
   return (
-    <Animated.View style={[styles.sheet, { height: sheetHeight }]}>
+    <Animated.View style={[styles.sheet, { transform: [{ translateY: sheetTranslateY }] }]}>
+      <Animated.View style={{ height: sheetHeight }}>
       <View {...sheetResponder.panHandlers} style={styles.grabberArea}><View style={styles.grabber} /></View>
 
       <View style={styles.sheetPadding}>
@@ -93,7 +134,11 @@ const EditorSheet = (props) => {
           {['subject', 'background', 'text'].map(l => (
             <TouchableOpacity
               key={l}
-              onPress={() => { props.setActiveLayer(l); setActiveSubTab('main'); }}
+              onPress={() => {
+                Keyboard.dismiss();
+                props.setActiveLayer(l);
+                setActiveSubTab('main');
+              }}
               style={[styles.tabBtn, props.activeLayer === l && styles.tabBtnActive]}
             >
               <Text style={[styles.tabText, props.activeLayer === l && styles.tabTextActive]}>{l}</Text>
@@ -102,27 +147,29 @@ const EditorSheet = (props) => {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.sheetContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[styles.sheetContent, { paddingBottom: 50 + (insets?.bottom || 0) }]}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+        onScrollBeginDrag={() => Keyboard.dismiss()}
+      >
         <View style={styles.subTabRow}>
-          <TouchableOpacity onPress={() => setActiveSubTab('main')} style={[styles.pillBtn, activeSubTab === 'main' ? styles.pillBtnActive : styles.pillBtnInactive]}>
+          <TouchableOpacity onPress={() => openSubTab('main')} style={[styles.pillBtn, activeSubTab === 'main' ? styles.pillBtnActive : styles.pillBtnInactive]}>
             <Text style={activeSubTab === 'main' ? styles.pillTextActive : styles.pillTextInactive}>Main</Text>
           </TouchableOpacity>
 
           {props.activeLayer !== 'text' && (
-            <TouchableOpacity onPress={() => setActiveSubTab('adjust')} style={[styles.pillBtn, activeSubTab === 'adjust' ? styles.pillBtnActive : styles.pillBtnInactive]}>
+            <TouchableOpacity onPress={() => openSubTab('adjust')} style={[styles.pillBtn, activeSubTab === 'adjust' ? styles.pillBtnActive : styles.pillBtnInactive]}>
               <Text style={activeSubTab === 'adjust' ? styles.pillTextActive : styles.pillTextInactive}>Adjust</Text>
             </TouchableOpacity>
           )}
 
-          <TouchableOpacity onPress={() => setActiveSubTab('shadow')} style={[styles.pillBtn, activeSubTab === 'shadow' ? styles.pillBtnActive : styles.pillBtnInactive]}>
+          <TouchableOpacity onPress={() => openSubTab('shadow')} style={[styles.pillBtn, activeSubTab === 'shadow' ? styles.pillBtnActive : styles.pillBtnInactive]}>
             <Text style={activeSubTab === 'shadow' ? styles.pillTextActive : styles.pillTextInactive}>Shadow</Text>
           </TouchableOpacity>
 
-          {props.activeLayer === 'background' && (
-            <TouchableOpacity onPress={() => setActiveSubTab('magic')} style={[styles.pillBtn, activeSubTab === 'magic' ? styles.pillBtnMagic : styles.pillBtnInactive]}>
-              <Text style={activeSubTab === 'magic' ? styles.pillTextMagic : styles.pillTextInactive}>Magic AI</Text>
-            </TouchableOpacity>
-          )}
+          {/* Magic AI background generator disabled for now */}
         </View>
 
         {activeSubTab === 'adjust' && (
@@ -172,26 +219,6 @@ const EditorSheet = (props) => {
                 </View>
               </>
             )}
-          </View>
-        )}
-
-        {activeSubTab === 'magic' && props.activeLayer === 'background' && (
-          <View style={styles.magicContainer}>
-            <Text style={styles.magicTitle}>Magic Background Generator</Text>
-            <TextInput
-              style={styles.magicInput}
-              placeholder="Describe your dream background..."
-              multiline
-              value={magicPrompt}
-              onChangeText={setMagicPrompt}
-            />
-            <TouchableOpacity
-              onPress={() => props.onMagicGenerate(magicPrompt)}
-              disabled={!magicPrompt}
-              style={[styles.magicBtn, { opacity: magicPrompt ? 1 : 0.5 }]}
-            >
-              <Text style={styles.magicBtnText}>Generate</Text>
-            </TouchableOpacity>
           </View>
         )}
 
@@ -474,6 +501,7 @@ const EditorSheet = (props) => {
           </>
         )}
       </ScrollView>
+      </Animated.View>
     </Animated.View>
   );
 };

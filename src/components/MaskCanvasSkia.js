@@ -119,8 +119,9 @@ export default function MaskCanvasSkia({
   const renderStroke = React.useCallback((stroke) => {
     if (!stroke?.points?.length) return null;
     const isErase = stroke.mode === 'erase';
-    const overlayColor = isErase ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.75)';
+    const overlayColor = 'rgba(255,0,0,0.80)';
     const size = Math.max(1, Number(stroke.size) || 1);
+    const blendMode = isErase ? 'clear' : 'srcOver';
 
     if (stroke.points.length === 1) {
       return (
@@ -130,6 +131,7 @@ export default function MaskCanvasSkia({
           cy={stroke.points[0].y}
           r={size / 2}
           color={overlayColor}
+          blendMode={blendMode}
         />
       );
     }
@@ -145,6 +147,7 @@ export default function MaskCanvasSkia({
         strokeWidth={size}
         strokeCap="round"
         strokeJoin="round"
+        blendMode={blendMode}
       />
     );
   }, []);
@@ -169,8 +172,10 @@ export default function MaskCanvasSkia({
           <Group transform={[{ translateX: rect.x }, { translateY: rect.y }, { scale: rect.scale }]}>
             <Image image={skImage} x={0} y={0} width={imageWidth} height={imageHeight} fit="fill" />
 
-            {(Array.isArray(strokes) ? strokes : []).map(renderStroke)}
-            {currentStroke ? renderStroke(currentStroke) : null}
+            <Group layer>
+              {(Array.isArray(strokes) ? strokes : []).map(renderStroke)}
+              {currentStroke ? renderStroke(currentStroke) : null}
+            </Group>
           </Group>
 
           {rect.width && rect.height ? (
@@ -200,4 +205,3 @@ const styles = StyleSheet.create({
   canvas: { flex: 1 },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 });
-

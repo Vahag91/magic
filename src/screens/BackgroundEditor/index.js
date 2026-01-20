@@ -2,27 +2,28 @@ import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { launchImageLibrary } from 'react-native-image-picker';
 import {
   View,
-  Alert,
-  ActivityIndicator,
   Text,
+  TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useError } from '../../providers/ErrorProvider';
 
-import { PALETTE, PLACEHOLDER_IMAGE } from './constants';
+import { PALETTE } from './constants';
 import { saveSkiaSnapshotToCache } from './helpers';
 import { styles, CANVAS_WIDTH, CANVAS_HEIGHT } from './styles';
 
-import Header from './Header';
 import SkiaBackgroundPreview from './SkiaBackgroundPreview';
 import FloatingTools from './FloatingTools';
 import EditorSheet from './EditorSheet';
 
 export default function BackgroundEditorScreen({ navigation, route }) {
+  const { showError, showAppError } = useError();
   const paramResult = route?.params?.subjectUri;
   const paramOriginal = route?.params?.originalUri;
 
-  const cutoutUri = paramResult || PLACEHOLDER_IMAGE;
-  const originalUri = paramOriginal || paramResult || PLACEHOLDER_IMAGE;
+  const cutoutUri = paramResult || null;
+  const originalUri = paramOriginal || paramResult || null;
+  const hasInput = Boolean(cutoutUri || originalUri);
 
   const [subjectVariant, setSubjectVariant] = useState(
     paramResult ? 'cutout' : 'original',
@@ -37,7 +38,6 @@ export default function BackgroundEditorScreen({ navigation, route }) {
   const [gradientStartColor, setGradientStartColor] = useState(PALETTE[2]);
   const [gradientEndColor, setGradientEndColor] = useState(PALETTE[4]);
   const [bgImageUri, setBgImageUri] = useState(null);
-  const [isGenerating, setIsGenerating] = useState(false);
   const [bgFilters, setBgFilters] = useState({
     brightness: 100,
     contrast: 100,
@@ -94,18 +94,6 @@ export default function BackgroundEditorScreen({ navigation, route }) {
     }
   };
 
-  const handleMagicGenerate = prompt => {
-    setIsGenerating(true);
-    setTimeout(() => {
-      setIsGenerating(false);
-      setBgImageUri(`https://picsum.photos/800/1000?random=${Date.now()}`);
-      setBgTransform({ x: 0, y: 0, scale: 1 });
-      setMode('image');
-      setActiveLayer('background');
-      Alert.alert('Magic AI', 'Background generated!');
-    }, 2000);
-  };
-
   const handleSetMode = newMode => {
     if (newMode === 'clear') {
       setMode('transparent');
@@ -150,7 +138,7 @@ export default function BackgroundEditorScreen({ navigation, route }) {
     try {
       const snap = previewRef.current?.makeImageSnapshot();
       if (!snap?.image) {
-        Alert.alert('Error', 'Could not capture image.');
+        showError();
         return;
       }
       const { image, width, height } = snap;
@@ -171,9 +159,21 @@ export default function BackgroundEditorScreen({ navigation, route }) {
         image.dispose();
       }
     } catch (e) {
-      Alert.alert('Error', e?.message || 'Failed to export image.');
+      showAppError(e, { retry: handleSave, retryLabel: 'Try again' });
     }
-  }, [navigation]);
+  }, [navigation, showAppError, showError]);
+
+  React.useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: hasInput
+        ? () => (
+            <TouchableOpacity onPress={handleSave} style={styles.headerBtnPrimary} activeOpacity={0.9}>
+              <Text style={styles.headerBtnTextPrimary}>Save</Text>
+            </TouchableOpacity>
+          )
+        : undefined,
+    });
+  }, [handleSave, hasInput, navigation]);
 
   const handleAddText = ({ x, y, focus = false } = {}) => {
     const xPos = typeof x === 'number' ? x : CANVAS_WIDTH / 2;
@@ -199,70 +199,79 @@ export default function BackgroundEditorScreen({ navigation, route }) {
     setTextFocusToken(t => t + 1);
   }, []);
 
+  if (!hasInput) {
+    return (
+      <SafeAreaView style={styles.container} edges={['bottom']}>
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyTitle}>No image selected</Text>
+          <Text style={styles.emptySub}>Go back and pick an image.</Text>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.emptyBtn} activeOpacity={0.85}>
+            <Text style={styles.emptyBtnText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const preview = (
+    <View style={styles.previewContainer}>
+      <SkiaBackgroundPreview
+        ref={previewRef}
+        width={CANVAS_WIDTH}
+        height={CANVAS_HEIGHT}
+        subjectUri={activeSubjectUri}
+        originalUri={originalUri}
+        autoAlignSubjectBottom={subjectVariant === 'cutout'}
+        bgImageUri={bgImageUri}
+        mode={mode}
+        showCheckerboard={showCheckerboard}
+        blurStrength={blurStrength}
+        dimBackground={dimBackground}
+        gradientAngle={gradientAngle}
+        gradientIntensity={gradientIntensity}
+        selectedColor={selectedColor}
+        gradientStartColor={gradientStartColor}
+        gradientEndColor={gradientEndColor}
+        bgOpacity={bgOpacity}
+        subjectFilters={subjectFilters}
+        bgFilters={bgFilters}
+        shadow={shadow}
+        subjectTransform={subjectTransform}
+        onSubjectTransformChange={setSubjectTransform}
+        subjectTool={subjectTool}
+        brushSettings={brushSettings}
+        bgTransform={bgTransform}
+        onBgTransformChange={setBgTransform}
+        bgTool={bgTool}
+        eraserPaths={eraserPaths}
+        setEraserPaths={setEraserPaths}
+        setRedoPaths={setRedoPaths}
+        textLayers={textLayers}
+        activeLayer={activeLayer}
+        selectedTextId={selectedTextId}
+        onSelectText={setSelectedTextId}
+        onUpdateText={(id, up) =>
+          setTextLayers(prev =>
+            prev.map(t => (t.id === id ? { ...t, ...up } : t)),
+          )
+        }
+        onAddTextAt={(x, y) => handleAddText({ x, y, focus: true })}
+        onTextDoubleTap={requestTextFocus}
+        onLayerSelect={setActiveLayer}
+      />
+
+      <FloatingTools
+        onUndo={handleUndo}
+        onRedo={handleRedo}
+        canUndo={eraserPaths.length > 0}
+        canRedo={redoPaths.length > 0}
+      />
+    </View>
+  );
+
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <Header onBack={() => navigation?.goBack()} onSave={handleSave} />
-
-      <View style={styles.previewContainer}>
-        <SkiaBackgroundPreview
-          ref={previewRef}
-          width={CANVAS_WIDTH}
-          height={CANVAS_HEIGHT}
-          subjectUri={activeSubjectUri}
-          originalUri={originalUri}
-          autoAlignSubjectBottom={subjectVariant === 'cutout'}
-          bgImageUri={bgImageUri}
-          mode={mode}
-          showCheckerboard={showCheckerboard}
-          blurStrength={blurStrength}
-          dimBackground={dimBackground}
-          gradientAngle={gradientAngle}
-          gradientIntensity={gradientIntensity}
-          selectedColor={selectedColor}
-          gradientStartColor={gradientStartColor}
-          gradientEndColor={gradientEndColor}
-          bgOpacity={bgOpacity}
-          subjectFilters={subjectFilters}
-          bgFilters={bgFilters}
-          shadow={shadow}
-          subjectTransform={subjectTransform}
-          onSubjectTransformChange={setSubjectTransform}
-          subjectTool={subjectTool}
-          brushSettings={brushSettings}
-          bgTransform={bgTransform}
-          onBgTransformChange={setBgTransform}
-          bgTool={bgTool}
-          eraserPaths={eraserPaths}
-          setEraserPaths={setEraserPaths}
-          setRedoPaths={setRedoPaths}
-          textLayers={textLayers}
-          activeLayer={activeLayer}
-          selectedTextId={selectedTextId}
-          onSelectText={setSelectedTextId}
-          onUpdateText={(id, up) =>
-            setTextLayers(prev =>
-              prev.map(t => (t.id === id ? { ...t, ...up } : t)),
-            )
-          }
-          onAddTextAt={(x, y) => handleAddText({ x, y, focus: true })}
-          onTextDoubleTap={requestTextFocus}
-          onLayerSelect={setActiveLayer}
-        />
-
-        <FloatingTools
-          onUndo={handleUndo}
-          onRedo={handleRedo}
-          canUndo={eraserPaths.length > 0}
-          canRedo={redoPaths.length > 0}
-        />
-
-        {isGenerating && (
-          <View style={styles.loaderOverlay}>
-            <ActivityIndicator size="large" color="#3b82f6" />
-            <Text style={styles.loaderText}>Generating Magic...</Text>
-          </View>
-        )}
-      </View>
+    <SafeAreaView style={styles.container} edges={['bottom']}>
+      {preview}
 
       <EditorSheet
         mode={mode}
@@ -318,7 +327,6 @@ export default function BackgroundEditorScreen({ navigation, route }) {
           setTextLayers(prev => prev.filter(t => t.id !== id));
           setSelectedTextId(null);
         }}
-        onMagicGenerate={handleMagicGenerate}
         onPickImage={handlePickImage}
       />
     </SafeAreaView>

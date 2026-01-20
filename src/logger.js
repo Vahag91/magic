@@ -1,4 +1,4 @@
-const DEFAULT_ENABLED = true;
+const DEFAULT_ENABLED = false;
 
 const timers = new Map();
 

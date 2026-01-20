@@ -1,10 +1,9 @@
 import * as React from 'react';
-import { Animated, StyleSheet, Text, useColorScheme, useWindowDimensions, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Animated, ScrollView, StyleSheet, Text, View } from 'react-native';
 import BeforeAfterSlider from '../components/BeforeAfterSlider';
+import OnboardingHeroCard from '../components/OnboardingHeroCard';
 
 const PRIMARY = '#2e69ff';
-
 const DEFAULT_BEFORE = require('../../../../assets/onboarding/beforeobject.jpg');
 const DEFAULT_AFTER = require('../../../../assets/onboarding/afterobject.jpg');
 
@@ -13,16 +12,23 @@ export default function WelcomeSlide({
   animationController,
   beforeSource = DEFAULT_BEFORE,
   afterSource = DEFAULT_AFTER,
+  layout,
+  isActive = false,
 }) {
-  const scheme = useColorScheme();
-  const isDark = scheme === 'dark';
-  const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
+  const isDark = false;
+  const isCompact = layout?.isCompact;
 
-  const slideX = Animated.multiply(Animated.subtract(index, animationController.current), width);
+  const titleFontSize = Math.round((isCompact ? 28 : 30) * layout.fontScale);
+  const titleLineHeight = Math.round((isCompact ? 34 : 36) * layout.fontScale);
+  const subtitleFontSize = Math.round((isCompact ? 15 : 16) * layout.fontScale);
+  const subtitleLineHeight = Math.round((isCompact ? 22 : 24) * layout.fontScale);
+
+  const [contentHeight, setContentHeight] = React.useState(0);
+  const [isDraggingSlider, setIsDraggingSlider] = React.useState(false);
+  const scrollEnabled = isActive && !isDraggingSlider && contentHeight > layout.height + 1;
 
   const opacity = animationController.current.interpolate({
-    inputRange: [index - 0.6, index, index + 0.6],
+    inputRange: [index - 1, index, index + 1],
     outputRange: [0, 1, 0],
     extrapolate: 'clamp',
   });
@@ -33,70 +39,105 @@ export default function WelcomeSlide({
     extrapolate: 'clamp',
   });
 
-  const cardScale = animationController.current.interpolate({
-    inputRange: [index - 0.6, index, index + 0.6],
-    outputRange: [0.96, 1, 0.96],
-    extrapolate: 'clamp',
-  });
-
-  const cardWidth = Math.min(width - 36, 410);
-  const cardHeight = Math.max(280, cardWidth * (5 / 4));
+  const topPad = layout.topPad;
+  const bottomPad = layout.bottomPad;
+  const heroWidth = layout.heroWidth;
+  const heroHeight = layout.heroHeight;
 
   return (
-    <Animated.View style={[styles.root, { transform: [{ translateX: slideX }], opacity }]}>
-      <View style={[styles.inner, { paddingTop: Math.max(24, insets.top + 76), paddingBottom: insets.bottom + 140 }]}>
-        <Animated.View style={{ transform: [{ translateY: contentTY }, { scale: cardScale }] }}>
-          <View style={{ width: cardWidth }}>
-            <BeforeAfterSlider
-              beforeSource={beforeSource}
-              afterSource={afterSource}
-              height={cardHeight}
-              borderRadius={22}
-              initial={0.52}
-              showLabels
-            />
-          </View>
-        </Animated.View>
+    <Animated.View pointerEvents={isActive ? 'auto' : 'none'} style={[styles.root, { opacity }]}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: topPad, paddingBottom: bottomPad }]}
+        onContentSizeChange={(_, h) => setContentHeight(h)}
+        scrollEnabled={scrollEnabled}
+        showsVerticalScrollIndicator={false}
+        showsHorizontalScrollIndicator={false}
+        bounces={false}
+        alwaysBounceVertical={false}
+        alwaysBounceHorizontal={false}     // ✅ iOS horizontal bounce OFF
+        directionalLockEnabled             // ✅ iOS lock to one direction
+        horizontal={false}
+        overScrollMode="never"             // ✅ Android
+      >
+        <View style={[styles.inner, { maxWidth: layout.maxWidth, paddingHorizontal: layout.sidePadding }]}>
+          <Animated.View style={{ transform: [{ translateY: contentTY }] }}>
+            <OnboardingHeroCard
+              width={heroWidth}
+              height={heroHeight}
+              backgroundColor={isDark ? '#0F1523' : '#FFFFFF'}
+              borderColor={isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.06)'}
+            >
+              <BeforeAfterSlider
+                beforeSource={beforeSource}
+                afterSource={afterSource}
+                height={heroHeight}
+                borderRadius={layout.cardRadius}
+                initial={0.52}
+                showLabels
+                onDraggingChange={setIsDraggingSlider} // ✅ critical fix
+              />
+            </OnboardingHeroCard>
+          </Animated.View>
 
-        <View style={styles.spacer} />
+          <Animated.View
+            style={[
+              styles.textBlock,
+              { transform: [{ translateY: contentTY }], maxWidth: layout.maxWidth, paddingHorizontal: layout.sidePadding },
+            ]}
+          >
+            <Text
+              style={[
+                styles.title,
+                {
+                  color: isDark ? '#FFFFFF' : '#101318',
+                  fontSize: titleFontSize,
+                  lineHeight: titleLineHeight,
+                },
+              ]}
+            >
+              Welcome to{'\n'}
+              <Text style={{ color: PRIMARY }}>Magic Studio</Text>
+            </Text>
 
-        <Animated.View style={[styles.textBlock, { transform: [{ translateY: contentTY }] }]}>
-          <Text style={[styles.title, { color: isDark ? '#FFFFFF' : '#101318' }]}>
-            Welcome to{'\n'}
-            <Text style={{ color: PRIMARY }}>Magic Studio</Text>
-          </Text>
-          <Text style={[styles.subtitle, { color: isDark ? 'rgba(255,255,255,0.72)' : '#6B7280' }]}>
-            The professional way to clean up your photos. Instantly remove backgrounds and unwanted objects with a single
-            tap.
-          </Text>
-        </Animated.View>
-      </View>
+            <Text
+              style={[
+                styles.subtitle,
+                {
+                  color: isDark ? 'rgba(255,255,255,0.72)' : '#6B7280',
+                  fontSize: subtitleFontSize,
+                  lineHeight: subtitleLineHeight,
+                },
+              ]}
+            >
+              The professional way to clean up your photos. Instantly remove backgrounds and unwanted objects with a single
+              tap.
+            </Text>
+          </Animated.View>
+        </View>
+      </ScrollView>
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  root: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
+  scroll: { width: '100%' }, // ✅ prevent weird sizing
+  scrollContent: { flexGrow: 1, width: '100%', alignItems: 'center' },
   inner: {
     width: '100%',
-    maxWidth: 430,
     flex: 1,
     alignItems: 'center',
-    paddingHorizontal: 18,
+    justifyContent: 'flex-start',
   },
-  spacer: { flex: 1, minHeight: 18 },
-  textBlock: { width: '100%', alignItems: 'center' },
+  textBlock: { width: '100%', alignItems: 'center', paddingTop: 12 },
   title: {
     textAlign: 'center',
-    fontSize: 34,
+    fontSize: 30,
     fontWeight: '900',
-    letterSpacing: -0.8,
-    lineHeight: 40,
-    marginBottom: 12,
+    letterSpacing: -0.6,
+    lineHeight: 36,
+    marginBottom: 8,
   },
   subtitle: { textAlign: 'center', fontSize: 16, lineHeight: 24, maxWidth: 330 },
 });

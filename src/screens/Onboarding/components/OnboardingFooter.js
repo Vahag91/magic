@@ -4,6 +4,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowRightIcon } from '../../../components/icons';
 
 const PRIMARY = '#2e69ff';
+const MAX_WIDTH = 430;
+const SIDE_PADDING = 18;
 
 function Dot({ active }) {
   return <View style={[styles.dot, active ? styles.dotActive : styles.dotInactive]} />;
@@ -16,30 +18,39 @@ export default function OnboardingFooter({
   onPrimaryPress,
   disabled,
   backgroundColor = 'transparent',
+  onLayout,
+  layout,
 }) {
   const insets = useSafeAreaInsets();
+  const maxWidth = layout?.maxWidth ?? MAX_WIDTH;
+  const sidePadding = layout?.sidePadding ?? SIDE_PADDING;
 
   return (
-    <View style={[styles.root, { paddingBottom: Math.max(14, 10 + insets.bottom), backgroundColor }]}>
-      <View style={styles.dotsRow}>
-        {Array.from({ length: pageCount }).map((_, idx) => (
-          <Dot key={idx} active={idx === pageIndex} />
-        ))}
-      </View>
-
-      <Pressable
-        onPress={disabled ? undefined : onPrimaryPress}
-        style={({ pressed }) => [
-          styles.button,
-          (pressed && !disabled) ? styles.buttonPressed : null,
-          disabled ? styles.buttonDisabled : null,
-        ]}
-      >
-        <View style={styles.buttonInner}>
-          <Text style={styles.buttonText}>{primaryLabel}</Text>
-          <ArrowRightIcon size={20} color="#FFFFFF" />
+    <View
+      onLayout={onLayout}
+      style={[styles.root, { paddingBottom: Math.max(14, 10 + insets.bottom), backgroundColor }]}
+    >
+      <View style={[styles.content, { maxWidth, paddingHorizontal: sidePadding }]}>
+        <View style={styles.dotsRow}>
+          {Array.from({ length: pageCount }).map((_, idx) => (
+            <Dot key={idx} active={idx === pageIndex} />
+          ))}
         </View>
-      </Pressable>
+
+        <Pressable
+          onPress={disabled ? undefined : onPrimaryPress}
+          style={({ pressed }) => [
+            styles.button,
+            (pressed && !disabled) ? styles.buttonPressed : null,
+            disabled ? styles.buttonDisabled : null,
+          ]}
+        >
+          <View style={styles.buttonInner}>
+            <Text style={styles.buttonText}>{primaryLabel}</Text>
+            <ArrowRightIcon size={20} color="#FFFFFF" />
+          </View>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -51,8 +62,11 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     zIndex: 20,
-    paddingHorizontal: 18,
     paddingTop: 10,
+    alignItems: 'center',
+  },
+  content: {
+    width: '100%',
     alignItems: 'center',
   },
   dotsRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
@@ -78,4 +92,3 @@ const styles = StyleSheet.create({
   buttonInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
   buttonText: { color: '#FFFFFF', fontSize: 17, fontWeight: '800' },
 });
-

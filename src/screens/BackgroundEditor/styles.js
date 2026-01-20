@@ -1,4 +1,4 @@
-import { StyleSheet, Dimensions } from 'react-native';
+import { StyleSheet, Dimensions, Platform } from 'react-native';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 export const CANVAS_ASPECT = 4 / 5;
@@ -13,9 +13,10 @@ export const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f3f4f6' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: 'white', borderBottomWidth: 1, borderColor: '#e5e7eb' },
   headerTitle: { fontWeight: '800', fontSize: 16 },
-  headerBtnPrimary: { backgroundColor: 'black', paddingHorizontal: 16, paddingVertical: 6, borderRadius: 20 },
+  headerBtnPrimary: { backgroundColor: 'black', paddingHorizontal: 16, paddingVertical: 6, borderRadius: 20, marginRight: 8 },
   headerBtnTextPrimary: { color: 'white', fontWeight: 'bold', fontSize: 12 },
   headerIconBtn: { padding: 6, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  backIcon: { fontSize: 28, color: '#111', marginTop: Platform.select({ ios: -2, android: 0 }) },
   previewContainer: {
     flex: 1,
     alignItems: 'center',
@@ -28,6 +29,11 @@ export const styles = StyleSheet.create({
   circleBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'white', alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.12, elevation: 6 },
   loaderOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(255,255,255,0.7)', justifyContent: 'center', alignItems: 'center', zIndex: 50 },
   loaderText: { marginTop: 10, fontWeight: '800', color: '#3b82f6' },
+  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
+  emptyTitle: { fontSize: 18, fontWeight: '800', color: '#111827', marginBottom: 6 },
+  emptySub: { fontSize: 13, fontWeight: '600', color: '#6b7280', marginBottom: 16, textAlign: 'center' },
+  emptyBtn: { backgroundColor: '#111827', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 999 },
+  emptyBtnText: { color: '#fff', fontWeight: '800' },
   sheet: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'white', borderTopLeftRadius: 24, borderTopRightRadius: 24, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 10, elevation: 20, zIndex: 100 },
   grabberArea: { width: '100%', height: 30, alignItems: 'center', justifyContent: 'center' },
   grabber: { width: 40, height: 4, backgroundColor: '#e5e7eb', borderRadius: 2 },
@@ -59,11 +65,6 @@ export const styles = StyleSheet.create({
   sheetContent: { paddingHorizontal: 20, paddingBottom: 50 },
   subTabRow: { flexDirection: 'row', gap: 10, borderBottomWidth: 1, borderColor: '#f3f4f6', paddingBottom: 10, marginBottom: 15 },
   sliderContainer: { marginBottom: 15 },
-  magicContainer: { backgroundColor: '#e0e7ff', padding: 15, borderRadius: 15, borderWidth: 1, borderColor: '#c7d2fe' },
-  magicTitle: { fontSize: 12, fontWeight: '800', color: '#4338ca', marginBottom: 10, textTransform: 'uppercase' },
-  magicInput: { backgroundColor: 'white', borderRadius: 10, padding: 12, height: 80, textAlignVertical: 'top', marginBottom: 10 },
-  magicBtn: { backgroundColor: '#4f46e5', padding: 12, borderRadius: 10, alignItems: 'center' },
-  magicBtnText: { color: 'white', fontWeight: 'bold', textTransform: 'uppercase', fontSize: 12 },
   modeScroll: { marginBottom: 15 },
   modeItem: { alignItems: 'center', marginRight: 15 },
   modeLabel: { fontSize: 10, marginTop: 4 },

@@ -1,17 +1,11 @@
 import * as React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Image,
-  Platform,
-} from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, hitSlop10 } from '../styles';
-import { ArrowRightIcon, ChevronRightIcon, SettingsIcon } from '../components/icons';
 
-// Color Palette
+import { colors } from '../styles';
+import { ChevronRightIcon } from '../components/icons';
+import HomeHeader from '../components/HomeHeader';
+
 const COLORS = {
   primary: colors.brandBlue,
   background: colors.white,
@@ -26,17 +20,13 @@ export default function HomeScreen({ navigation }) {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.contentWrapper}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => navigation && navigation.navigate('Settings')}
-            style={styles.iconButton}
-            hitSlop={hitSlop10}
-            activeOpacity={0.85}
-          >
-            <SettingsIcon size={28} color={COLORS.primary} />
-          </TouchableOpacity>
-        </View>
+        {/* Header (Redesigned) */}
+        <HomeHeader
+          onPressSettings={() => navigation && navigation.navigate('Settings')}
+          showDivider={false}
+        />
+
+        <View style={styles.headerDivider} />
 
         {/* Title Section */}
         <View style={styles.titleContainer}>
@@ -61,24 +51,6 @@ export default function HomeScreen({ navigation }) {
               </View>
             </View>
           </View>
-
-          {/* CTA Button */}
-          <TouchableOpacity
-            style={styles.ctaButton}
-            activeOpacity={0.85}
-            onPress={() => navigation && navigation.navigate('RemoveBackgroundSelect')}
-          >
-            <Text style={styles.ctaText}>Start Free Trial</Text>
-            <ArrowRightIcon size={20} color="#fff" />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.testButton}
-            activeOpacity={0.85}
-            onPress={() => navigation && navigation.navigate('Onboarding')}
-          >
-            <Text style={styles.testButtonText}>Test Onboarding</Text>
-          </TouchableOpacity>
         </View>
 
         {/* Feature List */}
@@ -133,10 +105,7 @@ function FeatureCard({ title, subtitle, iconUri, previewUri, onPress }) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
+  safeArea: { flex: 1, backgroundColor: COLORS.background },
   contentWrapper: {
     flex: 1,
     paddingHorizontal: 24,
@@ -146,14 +115,10 @@ const styles = StyleSheet.create({
     paddingBottom: 18,
   },
 
-  // Header
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    paddingVertical: 12,
-  },
-  iconButton: {
-    padding: 8,
+  headerDivider: {
+    height: 1,
+    backgroundColor: 'rgba(226,232,240,0.9)',
+    marginBottom: 18,
   },
 
   // Titles
@@ -230,8 +195,8 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
   },
   heroImage: {
-    width: "100%",
-    height: "100%",
+    width: '100%',
+    height: '100%',
     borderRadius: 40,
   },
 
@@ -261,24 +226,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
-  testButton: {
-    marginTop: 12,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 999,
-  },
-  testButtonText: {
-    color: COLORS.textMain,
-    fontSize: 14,
-    fontWeight: '700',
-  },
 
   // Cards
-  cardsContainer: {
-    gap: 12,
-  },
+  cardsContainer: { gap: 12 },
   card: {
     flexDirection: 'row',
     backgroundColor: COLORS.cardBg,
@@ -286,15 +236,10 @@ const styles = StyleSheet.create({
     padding: 16,
     alignItems: 'center',
     justifyContent: 'space-between',
-
-    // ✅ guarantee both cards same size
     minHeight: 118,
-
     borderWidth: 1,
     borderColor: 'transparent',
   },
-
-  // Left block
   cardContent: {
     flex: 1,
     paddingRight: 12,
@@ -307,9 +252,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     marginBottom: 10,
   },
-  textWrapper: {
-    justifyContent: 'center',
-  },
+  textWrapper: { justifyContent: 'center' },
   cardTitle: {
     fontSize: 17,
     fontWeight: '800',
@@ -323,15 +266,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     lineHeight: 18,
   },
-
-  // Right block
   cardRight: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
   },
-
-  // ✅ Bigger preview, consistent look
   previewWrap: {
     width: 132,
     height: 92,
@@ -341,8 +280,5 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     backgroundColor: '#E5E7EB',
   },
-  cardPreviewImage: {
-    width: '100%',
-    height: '100%',
-  },
+  cardPreviewImage: { width: '100%', height: '100%' },
 });

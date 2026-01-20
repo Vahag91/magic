@@ -1,5 +1,6 @@
-import { Alert } from 'react-native';
 import { SUPABASE_ANON_KEY, SUPABASE_BASE } from '../config/supabase';
+import { createAppError } from '../lib/errors';
+import { requestJson } from '../lib/request';
 
 function isHttpUrl(s) {
   return typeof s === 'string' && /^https?:\/\//i.test(s);
@@ -34,23 +35,17 @@ export async function removeObjectRunware({
   height,
   signal,
 }) {
-  if (!seedUri || !maskDataUri) {
-    Alert.alert('Remove Object', 'Missing image or mask.');
-    return null;
-  }
+  if (!seedUri || !maskDataUri) throw createAppError('invalid_input');
 
   const w = Math.round(Number(width) || 0);
   const h = Math.round(Number(height) || 0);
-  if (!w || !h) {
-    Alert.alert('Remove Object', 'Invalid image size.');
-    return null;
-  }
+  if (!w || !h) throw createAppError('invalid_image_size');
 
   try {
     const seedImage = await ensureImageDataUri(seedUri, signal);
-    if (!seedImage) throw new Error('Could not prepare input image.');
+    if (!seedImage) throw createAppError('invalid_input_image');
 
-    const res = await fetch(`${SUPABASE_BASE}/functions/v1/object-removal`, {
+    const json = await requestJson(`${SUPABASE_BASE}/functions/v1/object-removal`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -66,11 +61,6 @@ export async function removeObjectRunware({
       signal,
     });
 
-    const json = await res.json().catch(() => null);
-    if (!res.ok) {
-      throw new Error(json?.error || json?.message || `Request failed (${res.status})`);
-    }
-
     const imageURL =
       json?.imageURL ||
       json?.imageUrl ||
@@ -79,12 +69,10 @@ export async function removeObjectRunware({
       json?.data?.imageUrl ||
       json?.data?.url;
 
-    if (!imageURL) throw new Error('No imageURL returned.');
+    if (!imageURL) throw createAppError('invalid_response', { meta: { hasJson: Boolean(json) } });
     return imageURL;
   } catch (e) {
     if (e?.name === 'AbortError') return null;
-    Alert.alert('Remove Object', e?.message || 'Something went wrong.');
-    return null;
+    throw e;
   }
 }
-

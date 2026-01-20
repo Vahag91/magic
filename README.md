@@ -12,6 +12,11 @@ This is a new [**React Native**](https://reactnative.dev) project, bootstrapped 
   - iOS: `cd ios && pod install && cd .. && npm run ios`
   - Android: `npm run android`
 
+## Gemini (Object Removal)
+
+- Configure `GEMINI_API_KEY` in `src/config/gemini.js` (do not commit API keys).
+- For production, proxy Gemini requests through your backend/edge function to avoid exposing the key in the app bundle.
+
 ## Step 1: Start Metro
 
 First, you will need to run **Metro**, the JavaScript build tool for React Native.
