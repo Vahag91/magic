@@ -1,7 +1,4 @@
-// ExportScreen.js (FULL FIXED)
-// ✅ iOS first-save race fix: show loader, WAIT until Photos is "ready", then save.
-// ✅ Warm-up Photos + readiness loop (no immediate save)
-// ✅ Still keeps a small retry for the rare case save fails even after warmup
+
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
@@ -24,6 +21,8 @@ import RNFS from 'react-native-fs';
 import { ImageFormat, Skia } from '@shopify/react-native-skia';
 import { supabase } from '../services/supabaseClient';
 import { getDefaultExportFormat, getHdProcessingEnabled } from '../lib/settings';
+import { isSupabaseConfigured, createSupabaseConfigError } from '../config/supabase';
+import { createLogger } from '../logger';
 
 import {
   TransparentIcon,
@@ -42,6 +41,7 @@ const BG = '#FFFFFF';
 const TEXT = '#111827';
 const SUB = '#6B7280';
 const BORDER = '#E5E7EB';
+const exportLogger = createLogger('ExportScreen');
 
 // ✅ Base64 Checkerboard Pattern (offline-safe)
 const CHECKERBOARD_PATTERN =
@@ -82,6 +82,9 @@ function isHttpUrl(s) {
 }
 function isDataUri(s) {
   return typeof s === 'string' && /^data:/i.test(s);
+}
+function isLocalUri(s) {
+  return typeof s === 'string' && (/^(file|content):\/\//i.test(s) || s.startsWith('/'));
 }
 function parseDataUri(uri) {
   const clean = String(uri || '').replace(/\s/g, '');
@@ -138,6 +141,13 @@ async function fileUriToDataUri(uri, mimeFallback = 'image/jpeg') {
 }
 
 async function uriToDataUri(uri) {
+  if (isLocalUri(uri)) {
+    try {
+      return await fileUriToDataUri(uri);
+    } catch {
+      // Fall through for URIs RNFS can't resolve.
+    }
+  }
   const res = await fetch(uri);
   if (!res.ok) throw new Error('Failed to read image.');
   const blob = await res.blob();
@@ -232,6 +242,7 @@ function upscaleOutputFormatForExport(format) {
 }
 
 async function upscaleImageViaSupabase({ inputUri, exportFormat, upscaleFactor, log }) {
+  if (!isSupabaseConfigured) throw createSupabaseConfigError();
   const inputImage = await ensureUpscaleInputImage(inputUri, log);
   const outputFormat = upscaleOutputFormatForExport(exportFormat);
 
@@ -274,15 +285,20 @@ async function transcodeImageToCache({ uri, format, quality = 92, backgroundColo
   const surface = Skia.Surface.Make(w, h);
   if (!surface) throw new Error('Could not create export surface.');
 
-  const canvas = surface.getCanvas();
-  canvas.clear(Skia.Color(outFormat === 'jpg' ? backgroundColor : '#00000000'));
-  canvas.drawImage(image, 0, 0);
+  let snapshot = null;
+  try {
+    const canvas = surface.getCanvas();
+    canvas.clear(Skia.Color(outFormat === 'jpg' ? backgroundColor : '#00000000'));
+    canvas.drawImage(image, 0, 0);
 
-  surface.flush?.();
-  image.dispose?.();
+    surface.flush?.();
+    image.dispose?.();
 
-  const snapshot = surface.makeImageSnapshot();
-  if (!snapshot) throw new Error('Export snapshot failed.');
+    snapshot = surface.makeImageSnapshot();
+    if (!snapshot) throw new Error('Export snapshot failed.');
+  } finally {
+    surface.dispose?.();
+  }
 
   const skFormat = outFormat === 'jpg' ? ImageFormat.JPEG : ImageFormat.PNG;
   const q = outFormat === 'jpg' ? Math.max(1, Math.min(100, Number(quality) || 92)) : 100;
@@ -491,6 +507,7 @@ export default function ExportScreen({ navigation, route }) {
   const resultHeight = route?.params?.height || 1350;
   const previewWidth = route?.params?.canvasDisplayWidth || CANVAS_WIDTH;
   const previewHeight = route?.params?.canvasDisplayHeight || null;
+  const debugLogs = typeof __DEV__ !== 'undefined' && __DEV__;
 
   const [format, setFormat] = useState('png');
   const [resolution, setResolution] = useState('original');
@@ -499,7 +516,23 @@ export default function ExportScreen({ navigation, route }) {
   const didUserChangeFormatRef = useRef(false);
   const didUserChangeResolutionRef = useRef(false);
 
-  const log = useCallback(() => {}, []);
+  const log = useCallback(
+    (event, payload) => {
+      if (!debugLogs) return;
+      exportLogger.log(event, payload);
+    },
+    [debugLogs],
+  );
+
+  useEffect(() => {
+    log('route:params', {
+      resultUri: formatUriForLog(resultUri),
+      resultWidth,
+      resultHeight,
+      previewWidth,
+      previewHeight,
+    });
+  }, [log, previewHeight, previewWidth, resultHeight, resultUri, resultWidth]);
 
   useEffect(() => {
     let alive = true;
@@ -538,6 +571,7 @@ export default function ExportScreen({ navigation, route }) {
 
     (async () => {
       const size = await getDecodedImageSize(resultUri);
+      log('input:decodedSize', size);
       if (!alive) return;
       if (size?.width && size?.height) setInputSize(size);
     })();
@@ -563,6 +597,18 @@ export default function ExportScreen({ navigation, route }) {
     inFlightKey: null,
     inFlightPromise: null,
   });
+
+  useEffect(() => {
+    log('input:effective', { effectiveWidth, effectiveHeight, aspectRatio });
+  }, [aspectRatio, effectiveHeight, effectiveWidth, log]);
+
+  useEffect(() => {
+    log('ui:format', { format });
+  }, [format, log]);
+
+  useEffect(() => {
+    log('ui:resolution', { resolution, isPremium });
+  }, [isPremium, log, resolution]);
 
   const getHdUpscaledUri = useCallback(async () => {
     const factor = pickHdUpscaleFactor({ width: effectiveWidth, height: effectiveHeight });
@@ -614,6 +660,15 @@ export default function ExportScreen({ navigation, route }) {
     const cleanupPaths = [];
 
     try {
+      log('save:config', {
+        format,
+        resolution,
+        effectiveWidth,
+        effectiveHeight,
+        previewWidth,
+        previewHeight,
+        aspectRatio,
+      });
       log('save:tap', { uri: formatUriForLog(resultUri), platform: Platform.OS, version: Platform.Version });
 
       // 1) Permission
@@ -748,6 +803,15 @@ export default function ExportScreen({ navigation, route }) {
 
     const cleanupPaths = [];
     try {
+      log('share:config', {
+        format,
+        resolution,
+        effectiveWidth,
+        effectiveHeight,
+        previewWidth,
+        previewHeight,
+        aspectRatio,
+      });
       let inputUri = resultUri;
       if (isHdSelected) {
         try {

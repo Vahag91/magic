@@ -24,6 +24,9 @@ import {
 } from '@shopify/react-native-skia';
 import { styles, TEXT_BASE_FONT_SIZE } from './styles';
 import { getColorMatrix } from './helpers';
+import { createLogger } from '../../logger';
+
+const skiaBackgroundPreviewLogger = createLogger('SkiaBackgroundPreview');
 
 const SkiaBackgroundPreview = forwardRef(({
   width, height,
@@ -35,7 +38,7 @@ const SkiaBackgroundPreview = forwardRef(({
   gradientIntensity = 100,
   gradientStartColor = '#000000',
   gradientEndColor = '#ffffff',
-  bgOpacity, bgFilters, shadow,
+  bgOpacity, bgFilters, subjectFilters, shadow,
   subjectTransform, onSubjectTransformChange, subjectTool, brushSettings,
   bgTransform, onBgTransformChange, bgTool,
   eraserPaths, setEraserPaths, setRedoPaths,
@@ -48,6 +51,7 @@ const SkiaBackgroundPreview = forwardRef(({
   onAddTextAt,
   onTextDoubleTap,
   onSubjectImageLoadEnd,
+  onAssetsReady,
 }, ref) => {
   const skiaSubject = useImage(subjectUri);
   const skiaBg = useImage(bgImageUri);
@@ -68,6 +72,27 @@ const SkiaBackgroundPreview = forwardRef(({
     require('../../../assets/fonts/Inter-Variable.ttf'),
     TEXT_BASE_FONT_SIZE
   );
+
+  const debugLogs = typeof __DEV__ !== 'undefined' && __DEV__;
+  const logIf = React.useCallback(
+    (event, payload) => {
+      if (!debugLogs) return;
+      skiaBackgroundPreviewLogger.log(event, payload);
+    },
+    [debugLogs],
+  );
+
+  useEffect(() => {
+    logIf('mode', { mode, showCheckerboard });
+  }, [logIf, mode, showCheckerboard]);
+
+  useEffect(() => {
+    logIf('filters:subject', subjectFilters);
+  }, [logIf, subjectFilters]);
+
+  useEffect(() => {
+    logIf('filters:bg', bgFilters);
+  }, [logIf, bgFilters]);
 
   
   useImperativeHandle(ref, () => ({
@@ -140,6 +165,39 @@ const SkiaBackgroundPreview = forwardRef(({
     const { originalUri: lastUri, originalT0 } = imageLoadStartRef.current;
     if (lastUri !== originalUri || !originalT0) return;
   }, [originalUri, skiaOriginal]);
+
+  const assetsReadyKeyRef = useRef('');
+  useEffect(() => {
+    const needsBg = (mode === 'image' || mode === 'blur') && Boolean(bgImageUri);
+    const needsOriginal = mode === 'blur' && !bgImageUri && Boolean(originalUri);
+    const needsFont = Array.isArray(textLayers) && textLayers.length > 0;
+    const ready =
+      Boolean(skiaSubject) &&
+      (!needsBg || Boolean(skiaBg)) &&
+      (!needsOriginal || Boolean(skiaOriginal)) &&
+      (!needsFont || Boolean(baseFont));
+    if (!ready) return;
+
+    const key = `${width}x${height}|${subjectUri || ''}|${bgImageUri || ''}|${originalUri || ''}|${mode || ''}|${needsFont ? 'font' : 'nofont'}`;
+    if (assetsReadyKeyRef.current === key) return;
+    assetsReadyKeyRef.current = key;
+    if (typeof onAssetsReady === 'function') {
+      onAssetsReady({ key, width, height });
+    }
+  }, [
+    baseFont,
+    bgImageUri,
+    height,
+    mode,
+    onAssetsReady,
+    originalUri,
+    skiaBg,
+    skiaOriginal,
+    skiaSubject,
+    subjectUri,
+    textLayers,
+    width,
+  ]);
 
   const autoAlignedUriRef = useRef(null);
   useEffect(() => {
@@ -313,11 +371,13 @@ const SkiaBackgroundPreview = forwardRef(({
     })
   ).current;
 
+  const bgColorMatrix = React.useMemo(() => getColorMatrix(bgFilters), [bgFilters]);
+  const subjectColorMatrix = React.useMemo(() => getColorMatrix(subjectFilters), [subjectFilters]);
+
   if (!skiaSubject) return <View style={styles.loadingContainer}><ActivityIndicator /></View>;
 
   const subjectOrigin = vec(width / 2, height / 2);
   const bgOrigin = vec(width / 2, height / 2);
-  const bgColorMatrix = getColorMatrix(bgFilters);
   const gradientStop = Math.max(0.05, Math.min(1, (Number(gradientIntensity) || 0) / 100));
   const rad = ((Number(gradientAngle) || 0) * Math.PI) / 180;
   const cx = width / 2;
@@ -330,7 +390,7 @@ const SkiaBackgroundPreview = forwardRef(({
 
   return (
     <View style={[styles.skiaView, { width, height }]} {...panResponder.panHandlers}>
-      {mode === 'transparent' && showCheckerboard && (
+      {mode === 'clear' && showCheckerboard && (
         <View style={{ ...StyleSheet.absoluteFillObject, backgroundColor: '#F3F4F6' }}>
           {Platform.OS === 'ios' ? (
             <ImageBackground
@@ -428,7 +488,9 @@ const SkiaBackgroundPreview = forwardRef(({
             x={0} y={0} width={width} height={height} fit="contain"
             transform={[{ translateX: subjectTransform.x }, { translateY: subjectTransform.y }, { scale: subjectTransform.scale }]}
             origin={subjectOrigin}
-          />
+          >
+            <ColorMatrix matrix={subjectColorMatrix} />
+          </Image>
           {eraserPaths.map((p, index) => (
             <Path
               key={index}

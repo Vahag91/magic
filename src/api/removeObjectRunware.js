@@ -1,6 +1,12 @@
-import { SUPABASE_ANON_KEY, SUPABASE_BASE } from '../config/supabase';
+import {
+  SUPABASE_ANON_KEY,
+  SUPABASE_BASE,
+  isSupabaseConfigured,
+  createSupabaseConfigError,
+} from '../config/supabase';
 import { createAppError } from '../lib/errors';
 import { requestJson } from '../lib/request';
+import { createLogger } from '../logger';
 
 function isHttpUrl(s) {
   return typeof s === 'string' && /^https?:\/\//i.test(s);
@@ -28,13 +34,18 @@ async function ensureImageDataUri(seedUri, signal) {
   return await uriToDataUri(seedUri, signal);
 }
 
+const runwareLogger = createLogger('ObjectRemoverRunware');
+
 export async function removeObjectRunware({
   seedUri,
   maskDataUri, // data:image/png;base64,...
   width,
   height,
+  meta,
   signal,
+  debug = false,
 }) {
+  if (!isSupabaseConfigured) throw createSupabaseConfigError();
   if (!seedUri || !maskDataUri) throw createAppError('invalid_input');
 
   const w = Math.round(Number(width) || 0);
@@ -42,6 +53,16 @@ export async function removeObjectRunware({
   if (!w || !h) throw createAppError('invalid_image_size');
 
   try {
+    if (debug) {
+      runwareLogger.log('runware:request', {
+        seedKind: isDataUri(seedUri) ? 'data' : isHttpUrl(seedUri) ? 'http' : 'other',
+        seedLen: String(seedUri || '').length,
+        maskLen: String(maskDataUri || '').length,
+        width: w,
+        height: h,
+        meta,
+      });
+    }
     const seedImage = await ensureImageDataUri(seedUri, signal);
     if (!seedImage) throw createAppError('invalid_input_image');
 
@@ -57,8 +78,12 @@ export async function removeObjectRunware({
         maskImage: maskDataUri,
         width: w,
         height: h,
+        meta: meta || null,
       }),
       signal,
+      timeoutMs: 60000,
+      timeoutRetries: 1,
+      timeoutBackoffMs: 1000,
     });
 
     const imageURL =

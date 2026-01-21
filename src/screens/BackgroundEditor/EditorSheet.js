@@ -29,6 +29,9 @@ const EditorSheet = (props) => {
   const insets = useSafeAreaInsets();
   const [activeSubTab, setActiveSubTab] = useState('main');
   const [gradientStop, setGradientStop] = useState('start'); // start | end
+  const [textEditY, setTextEditY] = useState(null);
+  const scrollRef = useRef(null);
+  const pendingTextScrollRef = useRef(false);
   const sheetHeight = useRef(new Animated.Value(SHEET_MIN_HEIGHT)).current;
   const lastHeight = useRef(SHEET_MIN_HEIGHT);
   const sheetTranslateY = useRef(new Animated.Value(0)).current;
@@ -39,8 +42,22 @@ const EditorSheet = (props) => {
     if (props.activeLayer !== 'text') return;
     if (!props.selectedTextId) return;
     const id = requestAnimationFrame(() => textInputRef.current?.focus?.());
-    return () => cancelAnimationFrame(id);
-  }, [props.activeLayer, props.selectedTextId, props.textFocusToken]);
+    pendingTextScrollRef.current = true;
+    if (typeof textEditY === 'number') {
+      scrollRef.current?.scrollTo?.({ y: Math.max(0, textEditY - 12), animated: true });
+      pendingTextScrollRef.current = false;
+    }
+    return () => {
+      cancelAnimationFrame(id);
+    };
+  }, [props.activeLayer, props.selectedTextId, props.textFocusToken, textEditY]);
+
+  useEffect(() => {
+    if (!pendingTextScrollRef.current) return;
+    if (typeof textEditY !== 'number') return;
+    scrollRef.current?.scrollTo?.({ y: Math.max(0, textEditY - 12), animated: true });
+    pendingTextScrollRef.current = false;
+  }, [textEditY]);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -87,6 +104,8 @@ const EditorSheet = (props) => {
       props.setGradientStartColor(hex);
     }
   };
+
+  const formatNumber = (value) => Math.round(Number(value) || 0);
 
   const renderModeIcon = (key, active) => {
     const color = active ? '#3b82f6' : '#6B7280';
@@ -148,6 +167,7 @@ const EditorSheet = (props) => {
       </View>
 
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={[styles.sheetContent, { paddingBottom: 50 + (insets?.bottom || 0) }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
@@ -176,15 +196,15 @@ const EditorSheet = (props) => {
           <View>
             <Text style={styles.sectionTitle}>Filters</Text>
             <View style={styles.sliderContainer}>
-              <Text style={styles.label}>Brightness: {props.filters.brightness}%</Text>
+              <Text style={styles.label}>Brightness: {formatNumber(props.filters.brightness)}%</Text>
               <CustomSlider min={0} max={200} value={props.filters.brightness} onValueChange={(val) => props.setFilters(prev => ({ ...prev, brightness: val }))} />
             </View>
             <View style={styles.sliderContainer}>
-              <Text style={styles.label}>Contrast: {props.filters.contrast}%</Text>
+              <Text style={styles.label}>Contrast: {formatNumber(props.filters.contrast)}%</Text>
               <CustomSlider min={0} max={200} value={props.filters.contrast} onValueChange={(val) => props.setFilters(prev => ({ ...prev, contrast: val }))} />
             </View>
             <View style={styles.sliderContainer}>
-              <Text style={styles.label}>Saturation: {props.filters.saturation}%</Text>
+              <Text style={styles.label}>Saturation: {formatNumber(props.filters.saturation)}%</Text>
               <CustomSlider min={0} max={200} value={props.filters.saturation} onValueChange={(val) => props.setFilters(prev => ({ ...prev, saturation: val }))} />
             </View>
           </View>
@@ -206,15 +226,15 @@ const EditorSheet = (props) => {
             {props.shadow.enabled && (
               <>
                 <View style={styles.sliderContainer}>
-                  <Text style={styles.label}>Blur Radius: {props.shadow.blur}</Text>
+                  <Text style={styles.label}>Blur Radius: {formatNumber(props.shadow.blur)}</Text>
                   <CustomSlider min={0} max={50} value={props.shadow.blur} onValueChange={(v) => props.setShadow(s => ({ ...s, blur: v }))} />
                 </View>
                 <View style={styles.sliderContainer}>
-                  <Text style={styles.label}>Opacity: {props.shadow.opacity}%</Text>
+                  <Text style={styles.label}>Opacity: {formatNumber(props.shadow.opacity)}%</Text>
                   <CustomSlider min={0} max={100} value={props.shadow.opacity} onValueChange={(v) => props.setShadow(s => ({ ...s, opacity: v }))} />
                 </View>
                 <View style={styles.sliderContainer}>
-                  <Text style={styles.label}>Distance (X/Y): {props.shadow.x}</Text>
+                  <Text style={styles.label}>Distance (X/Y): {formatNumber(props.shadow.x)}</Text>
                   <CustomSlider min={-50} max={50} value={props.shadow.x} onValueChange={(v) => props.setShadow(s => ({ ...s, x: v, y: v }))} />
                 </View>
               </>
@@ -233,10 +253,27 @@ const EditorSheet = (props) => {
                       <View style={[styles.modeIcon, props.mode === m.key && styles.modeIconActive]}>
                         {renderModeIcon(m.key, props.mode === m.key)}
                       </View>
-                      <Text style={styles.modeLabel}>{m.label}</Text>
+                      <Text style={[styles.modeLabel, props.mode === m.key && styles.modeLabelActive]}>{m.label}</Text>
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
+
+                {props.mode === 'clear' && (
+                  <View style={styles.optionRow}>
+                    <Text style={styles.optionLabel}>Checkerboard</Text>
+                    <TouchableOpacity
+                      onPress={() => props.setShowCheckerboard(!props.showCheckerboard)}
+                      style={[
+                        styles.pillBtn,
+                        props.showCheckerboard ? styles.pillBtnActive : styles.pillBtnInactive,
+                      ]}
+                    >
+                      <Text style={props.showCheckerboard ? styles.pillTextActive : styles.pillTextInactive}>
+                        {props.showCheckerboard ? 'ON' : 'OFF'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
 
                 {props.mode === 'color' && (
                   <View style={styles.colorPickerWrap}>
@@ -372,10 +409,10 @@ const EditorSheet = (props) => {
                     <Text style={styles.label}>Tools</Text>
                     <View style={styles.bgToolsRow}>
                       <TouchableOpacity onPress={() => props.setBgTool('move')} style={[styles.toolBtn, props.bgTool === 'move' && styles.toolBtnActive]}>
-                        <Text>Move</Text>
+                        <Text style={[styles.toolText, props.bgTool === 'move' && styles.toolTextActive]}>Move</Text>
                       </TouchableOpacity>
                       <TouchableOpacity onPress={() => props.setBgTool('scale')} style={[styles.toolBtn, props.bgTool === 'scale' && styles.toolBtnActive]}>
-                        <Text>Scale</Text>
+                        <Text style={[styles.toolText, props.bgTool === 'scale' && styles.toolTextActive]}>Scale</Text>
                       </TouchableOpacity>
                     </View>
 
@@ -394,6 +431,36 @@ const EditorSheet = (props) => {
 
             {props.activeLayer === 'subject' && (
               <View>
+                {props.hasCutout && props.hasOriginal && (
+                  <View style={styles.subjectVariantWrap}>
+                    <Text style={styles.label}>Subject</Text>
+                    <View style={styles.subjectVariantRow}>
+                      <TouchableOpacity
+                        onPress={() => props.setSubjectVariant('cutout')}
+                        style={[
+                          styles.pillBtn,
+                          props.subjectVariant === 'cutout' ? styles.pillBtnActive : styles.pillBtnInactive,
+                        ]}
+                      >
+                        <Text style={props.subjectVariant === 'cutout' ? styles.pillTextActive : styles.pillTextInactive}>
+                          Cutout
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => props.setSubjectVariant('original')}
+                        style={[
+                          styles.pillBtn,
+                          props.subjectVariant === 'original' ? styles.pillBtnActive : styles.pillBtnInactive,
+                        ]}
+                      >
+                        <Text style={props.subjectVariant === 'original' ? styles.pillTextActive : styles.pillTextInactive}>
+                          Original
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+
                 <View style={styles.subjectToolsRow}>
                   {['move', 'scale', 'erase'].map(t => (
                     <TouchableOpacity key={t} onPress={() => props.setSubjectTool(t)} style={[styles.toolTab, props.subjectTool === t && styles.toolTabActive]}>
@@ -418,7 +485,7 @@ const EditorSheet = (props) => {
 
                 {props.subjectTool === 'erase' && (
                   <View>
-                    <Text style={styles.label}>Eraser Size: {props.brushSettings.size}</Text>
+                    <Text style={styles.label}>Eraser Size: {formatNumber(props.brushSettings.size)}</Text>
                     <CustomSlider
                       min={5}
                       max={80}
@@ -446,7 +513,13 @@ const EditorSheet = (props) => {
                 </TouchableOpacity>
 
                 {props.selectedTextId ? (
-                  <View style={styles.editTextContainer}>
+                  <View
+                    style={styles.editTextContainer}
+                    onLayout={(e) => {
+                      const y = Number(e?.nativeEvent?.layout?.y);
+                      if (Number.isFinite(y)) setTextEditY(y);
+                    }}
+                  >
                     <Text style={styles.label}>Text</Text>
                     <TextInput
                       ref={textInputRef}

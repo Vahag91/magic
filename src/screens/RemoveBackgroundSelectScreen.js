@@ -28,11 +28,13 @@ import {
 } from '../components/icons';
 
 import { useError } from '../providers/ErrorProvider';
+import { createLogger } from '../logger';
 
 const PRIMARY = colors.blue500;
 const TEXT = colors.text;
 const MUTED = colors.muted;
 const SURFACE = '#F9FAFB';
+const removeBackgroundSelectLogger = createLogger('RemoveBackgroundSelect');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
@@ -54,10 +56,14 @@ function isDev() {
   return typeof __DEV__ !== 'undefined' && __DEV__;
 }
 
-function logIf(debug, ...args) {
+function logIf(debug, event, payload) {
   if (!debug) return;
-  // eslint-disable-next-line no-console
-  console.log('[RemoveBackgroundSelect]', ...args);
+  removeBackgroundSelectLogger.log(event, payload);
+}
+function formatUriForLog(uri) {
+  const s = String(uri || '');
+  if (!s) return '';
+  return s.length > 140 ? `${s.slice(0, 140)}…` : s;
 }
 
 function normalizeMime(mime) {
@@ -99,15 +105,20 @@ export default function RemoveBackgroundSelectScreen({ navigation, route }) {
     ({ imageUri, base64, mime }) => {
       if (!imageUri && !base64) return;
 
-      if (isObjectRemoval) {
-        if (!imageUri) return;
-        navigation.navigate('ObjectRemover', { imageUri });
-        return;
-      }
+      logIf(debugLogs, 'navigate', {
+        imageUri: formatUriForLog(imageUri),
+        hasBase64: Boolean(base64),
+        mime,
+      });
 
-      navigation.navigate('RemoveBackgroundProcessing', { imageUri, base64, mime });
+      navigation.navigate('Crop', {
+        imageUri,
+        base64,
+        mime,
+        flow: isObjectRemoval ? 'objectRemoval' : 'backgroundRemoval',
+      });
     },
-    [isObjectRemoval, navigation],
+    [debugLogs, isObjectRemoval, navigation],
   );
 
   const handleImagePickerResult = React.useCallback(
@@ -197,7 +208,7 @@ export default function RemoveBackgroundSelectScreen({ navigation, route }) {
       const result = await launchImageLibrary({
         mediaType: 'photo',
         selectionLimit: 1,
-        quality: isObjectRemoval ? 1 : 0.7,
+        quality: 1,
         includeBase64: !isObjectRemoval,
       });
 
@@ -220,6 +231,12 @@ export default function RemoveBackgroundSelectScreen({ navigation, route }) {
       const file = results?.[0];
       const imageUri = file?.fileCopyUri || file?.uri;
       const mime = file?.type || null;
+      logIf(debugLogs, 'picker:file', {
+        uri: formatUriForLog(imageUri),
+        mime,
+        name: file?.name || null,
+        size: file?.size || null,
+      });
 
       release();
 
@@ -230,7 +247,7 @@ export default function RemoveBackgroundSelectScreen({ navigation, route }) {
       if (isErrorWithCode(error) && error.code === errorCodes.OPERATION_CANCELED) return;
       showError();
     }
-  }, [lock, navigateNext, release, showError]);
+  }, [debugLogs, lock, navigateNext, release, showError]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>

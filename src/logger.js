@@ -1,4 +1,4 @@
-const DEFAULT_ENABLED = false;
+const DEFAULT_ENABLED = typeof __DEV__ !== 'undefined' && __DEV__ === true;
 
 const timers = new Map();
 
@@ -37,12 +37,25 @@ function sanitizeMeta(meta) {
   return out;
 }
 
-function isEnabled() {
+function getGlobalLoggerConfig() {
+  // eslint-disable-next-line no-undef
+  const g = typeof globalThis !== 'undefined' ? globalThis : typeof global !== 'undefined' ? global : undefined;
+  return {
+    override: g?.__MAGICSTUDIO_LOGS__,
+    scopes: g?.__MAGICSTUDIO_LOG_SCOPES__,
+  };
+}
+
+function isEnabled(scope) {
   // Allow runtime override:
   // globalThis.__MAGICSTUDIO_LOGS__ = true/false
-  // eslint-disable-next-line no-undef
-  const override = globalThis?.__MAGICSTUDIO_LOGS__;
+  // globalThis.__MAGICSTUDIO_LOG_SCOPES__ = ['ScopeA', 'ScopeB']
+  const { override, scopes } = getGlobalLoggerConfig();
   if (typeof override === 'boolean') return override;
+  if (Array.isArray(scopes)) {
+    if (!scope) return scopes.length > 0;
+    return scopes.includes(scope);
+  }
   return DEFAULT_ENABLED;
 }
 
@@ -50,7 +63,7 @@ export function createLogger(scope) {
   const prefix = `[MagicStudio][${scope}]`;
 
   function emit(level, event, meta) {
-    if (!isEnabled()) return;
+    if (!isEnabled(scope)) return;
     const payload = sanitizeMeta(meta);
     const msg = payload ? `${prefix} ${event} ${safeStringify(payload)}` : `${prefix} ${event}`;
     (console[level] || console.log)(msg);

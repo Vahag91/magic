@@ -13,14 +13,16 @@ import { resizeSeedToDataUri, resizeSeedToFileUri } from '../lib/objectRemoval/s
 import { exportMarkedImageToDataUri } from '../lib/objectRemoval/markedExport';
 import { removeObjectWithGeminiInpainting } from '../api/removeObjectGemini';
 import { removeObjectRunware } from '../api/removeObjectRunware';
-import { CANVAS_WIDTH } from './BackgroundEditor/styles';
+import { CANVAS_WIDTH, CANVAS_HEIGHT } from './BackgroundEditor/styles';
+import { createLogger } from '../logger';
 
 const TEXT = colors.text || '#111827';
 const SUB = colors.muted || '#6B7280';
+const objectRemoverLogger = createLogger('ObjectRemoverScreen');
 
-function logIf(debug, ...args) {
+function logIf(debug, event, payload) {
   if (!debug) return;
-  console.log('[ObjectRemover]', ...args);
+  objectRemoverLogger.log(event, payload);
 }
 
 function strokeInkScore(strokes) {
@@ -51,10 +53,12 @@ function strokeInkScore(strokes) {
 export default function ObjectRemoverScreen({ navigation, route }) {
   const { showError, showAppError } = useError();
   const insets = useSafeAreaInsets();
+  const debugLogs = typeof __DEV__ !== 'undefined' && __DEV__;
 
   const imageUri = route?.params?.imageUri || null;
   const mimeType = route?.params?.mimeType || null;
   const exifOrientation = route?.params?.exifOrientation || null;
+  const cropMeta = route?.params?.cropMeta || null;
   const paramW = Number(route?.params?.width) || 0;
   const paramH = Number(route?.params?.height) || 0;
 
@@ -224,6 +228,9 @@ export default function ObjectRemoverScreen({ navigation, route }) {
       Alert.alert('Remove Object', 'Invalid image size.');
       return;
     }
+    const outputRatio = target.width && target.height ? target.width / target.height : null;
+    const canvasDisplayWidth = CANVAS_WIDTH;
+    const canvasDisplayHeight = outputRatio ? canvasDisplayWidth / outputRatio : CANVAS_HEIGHT;
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -244,6 +251,7 @@ export default function ObjectRemoverScreen({ navigation, route }) {
         targetH: target.height,
         strokes: strokes.length,
         mimeType,
+        cropMeta,
       });
 
       if (hasGeminiKey) {
@@ -278,11 +286,18 @@ export default function ObjectRemoverScreen({ navigation, route }) {
 
         if (!resultUri) return;
 
+        logIf(debugLogs, 'export:navigate', {
+          width: target.width,
+          height: target.height,
+          canvasDisplayWidth,
+          canvasDisplayHeight,
+        });
         navigation.navigate('Export', {
           resultUri,
           width: target.width,
           height: target.height,
-          canvasDisplayWidth: CANVAS_WIDTH,
+          canvasDisplayWidth,
+          canvasDisplayHeight,
         });
       } else {
         const seedDataUri = await resizeSeedToDataUri({
@@ -311,16 +326,29 @@ export default function ObjectRemoverScreen({ navigation, route }) {
           maskDataUri,
           width: target.width,
           height: target.height,
+          meta: {
+            crop: cropMeta || null,
+            inputSize: { width: srcW, height: srcH },
+            outputSize: { width: target.width, height: target.height },
+          },
           signal: controller.signal,
+          debug: debugLogs,
         });
 
         if (!imageURL) return;
 
+        logIf(debugLogs, 'export:navigate', {
+          width: target.width,
+          height: target.height,
+          canvasDisplayWidth,
+          canvasDisplayHeight,
+        });
         navigation.navigate('Export', {
           resultUri: imageURL,
           width: target.width,
           height: target.height,
-          canvasDisplayWidth: CANVAS_WIDTH,
+          canvasDisplayWidth,
+          canvasDisplayHeight,
         });
       }
     } catch (e) {
@@ -332,7 +360,18 @@ export default function ObjectRemoverScreen({ navigation, route }) {
       setIsWorking(false);
       setRequestPreview(null);
     }
-  }, [canSubmit, effectiveUri, imageSize.height, imageSize.width, isWorking, mimeType, navigation, showAppError, strokes]);
+  }, [
+    canSubmit,
+    cropMeta,
+    effectiveUri,
+    imageSize.height,
+    imageSize.width,
+    isWorking,
+    mimeType,
+    navigation,
+    showAppError,
+    strokes,
+  ]);
 
   const showSizeLoader = isPreparingInput || !imageSize.width || !imageSize.height;
 

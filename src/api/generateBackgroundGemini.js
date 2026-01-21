@@ -8,7 +8,7 @@ function isDev() {
 function requireGeminiClient() {
   const apiKey = String(GEMINI_API_KEY || '').trim();
   if (!apiKey) {
-    throw new Error('Missing Gemini API key. Set `GEMINI_API_KEY` in `src/config/gemini.js` (do not commit it).');
+    throw new Error('Missing Gemini API key. Set GEMINI_API_KEY in .env (do not commit it).');
   }
   return new GoogleGenAI({ apiKey });
 }

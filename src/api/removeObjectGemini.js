@@ -1,5 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import { GEMINI_API_KEY, GEMINI_IMAGE_MODEL } from '../config/gemini';
+import { createLogger } from '../logger';
 
 const DEFAULT_INPAINT_PROMPT =
   "I have provided an image where I have marked unwanted objects with solid RED paint. Please remove the red markings and the objects beneath them. Heal/inpaint the background seamlessly using textures from the surrounding areas. The final result should look natural, high-resolution, and contain absolutely no red markings or artifacts from the removal.";
@@ -8,15 +9,17 @@ function isDev() {
   return typeof __DEV__ !== 'undefined' && __DEV__;
 }
 
-function logIf(debug, ...args) {
+const geminiLogger = createLogger('Gemini');
+
+function logIf(debug, event, payload) {
   if (!debug) return;
-  console.log('[Gemini]', ...args);
+  geminiLogger.log(event, payload);
 }
 
 function requireGeminiClient() {
   const apiKey = String(GEMINI_API_KEY || '').trim();
   if (!apiKey) {
-    throw new Error('Missing Gemini API key. Set `GEMINI_API_KEY` in `src/config/gemini.js` (do not commit it).');
+    throw new Error('Missing Gemini API key. Set GEMINI_API_KEY in .env (do not commit it).');
   }
   return new GoogleGenAI({ apiKey });
 }

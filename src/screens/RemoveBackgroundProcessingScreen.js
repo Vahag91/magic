@@ -17,9 +17,11 @@ import { decode as base64Decode } from 'base-64';
 import { ImageFormat, Skia } from '@shopify/react-native-skia';
 import RNFS from 'react-native-fs';
 import { supabase } from '../services/supabaseClient';
+import { isSupabaseConfigured } from '../config/supabase';
 import { common } from '../styles';
 import { useError } from '../providers/ErrorProvider';
 import { createAppError } from '../lib/errors';
+import { createLogger } from '../logger';
 
 // If you have these icons, use them. Otherwise, the code falls back to text.
 import { ProcessingMagicIcon } from '../components/icons';
@@ -35,6 +37,7 @@ const BG = '#F8FAFC';
 const TEXT = '#0F172A';
 const SUB = '#64748B';
 const BORDER = 'rgba(15, 23, 42, 0.08)';
+const removeBackgroundProcessingLogger = createLogger('RemoveBackgroundProcessing');
 
 // -------------------- helpers --------------------
 function isHttpUrl(s) {
@@ -43,11 +46,51 @@ function isHttpUrl(s) {
 function isDataUri(s) {
   return typeof s === 'string' && /^data:/i.test(s);
 }
+function isLocalUri(s) {
+  return typeof s === 'string' && (/^(file|content):\/\//i.test(s) || s.startsWith('/'));
+}
+function isDev() {
+  return typeof __DEV__ !== 'undefined' && __DEV__;
+}
+function formatUriForLog(uri) {
+  const s = String(uri || '');
+  if (!s) return '';
+  if (/^data:/i.test(s)) return `data:… (len ${s.length})`;
+  return s.length > 140 ? `${s.slice(0, 140)}…` : s;
+}
+function formatResponseForLog(data) {
+  if (!data || typeof data !== 'object') return { type: typeof data };
+  const keys = Object.keys(data);
+  const images = Array.isArray(data?.images) ? data.images : [];
+  const firstUrl = images?.[0]?.url || images?.[0]?.imageURL || images?.[0]?.imageUrl || null;
+  return {
+    keys,
+    status: data?.status || null,
+    provider: data?.provider || null,
+    model: data?.model || null,
+    outputFormat: data?.outputFormat || null,
+    imageCount: images.length,
+    firstUrl: firstUrl ? formatUriForLog(firstUrl) : null,
+  };
+}
+function normalizeImageUri(value) {
+  if (!value) return null;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object') return value.uri || value.url || null;
+  return String(value);
+}
 
 function normalizeMime(mime) {
   if (!mime) return null;
   if (mime === 'image/jpg') return 'image/jpeg';
   return mime;
+}
+function guessMimeFromUri(uri) {
+  const clean = String(uri || '').split('?')[0].split('#')[0];
+  if (/\.png$/i.test(clean)) return 'image/png';
+  if (/\.jpe?g$/i.test(clean)) return 'image/jpeg';
+  if (/\.webp$/i.test(clean)) return 'image/webp';
+  return null;
 }
 
 function getImageSizeAsync(uri) {
@@ -73,6 +116,13 @@ async function uriToDataUri(uri) {
   });
 }
 
+async function localUriToDataUri(uri, mime) {
+  const safeMime = normalizeMime(mime) || guessMimeFromUri(uri) || 'image/jpeg';
+  const path = uri.startsWith('file://') ? uri.replace(/^file:\/\//i, '') : uri;
+  const base64 = await RNFS.readFile(path, 'base64');
+  return `data:${safeMime};base64,${String(base64 || '').replace(/\s+/g, '')}`;
+}
+
 
 async function buildInputImage({ imageUri, base64, mime }) {
   if (base64) {
@@ -80,6 +130,13 @@ async function buildInputImage({ imageUri, base64, mime }) {
     return `data:${safeMime};base64,${base64}`;
   }
   if (isHttpUrl(imageUri) || isDataUri(imageUri)) return imageUri;
+  if (isLocalUri(imageUri)) {
+    try {
+      return await localUriToDataUri(imageUri, mime);
+    } catch {
+      // Fallback to fetch for cases RNFS can't read (ex: provider URIs).
+    }
+  }
   return await uriToDataUri(imageUri);
 }
 
@@ -174,24 +231,55 @@ function getExifOrientationFromJpegBytes(bytes) {
   return null;
 }
 
-async function getExifOrientationAsync({ imageUri, base64, mime }) {
+async function getExifOrientationAsync({ imageUri, base64, mime, debug = false }) {
   const maybeJpeg = !mime || /^image\/jpe?g$/i.test(String(mime));
-  if (!maybeJpeg) return null;
+  if (!maybeJpeg) {
+    if (debug) {
+      removeBackgroundProcessingLogger.log('exif:skip', { reason: 'non-jpeg', mime });
+    }
+    return null;
+  }
 
   try {
     if (base64) {
       const bytes = base64ToBytes(base64, 64 * 1024);
-      return getExifOrientationFromJpegBytes(bytes);
+      if (debug) {
+        removeBackgroundProcessingLogger.log('exif:source', {
+          source: 'base64',
+          bytes: bytes.length,
+        });
+      }
+      const orientation = getExifOrientationFromJpegBytes(bytes);
+      if (debug) removeBackgroundProcessingLogger.log('exif:result', { orientation });
+      return orientation;
     }
 
     if (typeof imageUri === 'string' && imageUri.startsWith('file://')) {
       const path = imageUri.replace(/^file:\/\//i, '');
       const chunk = await RNFS.read(path, 64 * 1024, 0, 'base64');
       const bytes = base64ToBytes(chunk, 64 * 1024);
-      return getExifOrientationFromJpegBytes(bytes);
+      if (debug) {
+        removeBackgroundProcessingLogger.log('exif:source', {
+          source: 'file',
+          uri: formatUriForLog(imageUri),
+          bytes: bytes.length,
+        });
+      }
+      const orientation = getExifOrientationFromJpegBytes(bytes);
+      if (debug) removeBackgroundProcessingLogger.log('exif:result', { orientation });
+      return orientation;
     }
-  } catch {
-    // ignore
+
+    if (debug) {
+      removeBackgroundProcessingLogger.log('exif:skip', {
+        reason: 'unsupported_uri',
+        uri: formatUriForLog(imageUri),
+      });
+    }
+  } catch (error) {
+    if (debug) {
+      removeBackgroundProcessingLogger.log('exif:error', { message: error?.message || String(error) });
+    }
   }
 
   return null;
@@ -204,8 +292,15 @@ function rotationDegreesFromExif(orientation) {
   return 0;
 }
 
-async function rotatePngFileWithSkia({ uri, degrees }) {
+async function rotatePngFileWithSkia({ uri, degrees, debug = false }) {
   const rot = ((degrees % 360) + 360) % 360;
+  if (debug) {
+    removeBackgroundProcessingLogger.log('rotate:skia:start', {
+      uri: formatUriForLog(uri),
+      degrees,
+      rot,
+    });
+  }
 
   let data;
   try {
@@ -226,6 +321,14 @@ async function rotatePngFileWithSkia({ uri, degrees }) {
   const h = image.height();
   const outW = rot === 90 || rot === 270 ? h : w;
   const outH = rot === 90 || rot === 270 ? w : h;
+  if (debug) {
+    removeBackgroundProcessingLogger.log('rotate:skia:dimensions', {
+      w,
+      h,
+      outW,
+      outH,
+    });
+  }
 
   const surface = Skia.Surface.Make(outW, outH);
   if (!surface) throw new Error('rotate_cutout_skia: Skia surface creation failed.');
@@ -273,6 +376,9 @@ async function rotatePngFileWithSkia({ uri, degrees }) {
 
   const outPath = `${RNFS.CachesDirectoryPath}/cutout-rotated-${Date.now()}.png`;
   await RNFS.writeFile(outPath, outBase64, 'base64');
+  if (debug) {
+    removeBackgroundProcessingLogger.log('rotate:skia:done', { outUri: formatUriForLog(outPath) });
+  }
   return `file://${outPath}`;
 }
 
@@ -288,10 +394,19 @@ async function downloadCutoutToCache(url) {
 
 // -------------------- main --------------------
 export default function RemoveBackgroundProcessingScreen({ navigation, route }) {
-  const { showAppError } = useError();
-  const imageUri = route?.params?.imageUri || null;
+  const { showAppError, showError } = useError();
+  const debugLogs = isDev();
+  const logIf = React.useCallback(
+    (event, payload) => {
+      if (!debugLogs) return;
+      removeBackgroundProcessingLogger.log(event, payload);
+    },
+    [debugLogs],
+  );
+  const imageUri = normalizeImageUri(route?.params?.imageUri);
   const base64 = route?.params?.base64 || null;
   const mime = normalizeMime(route?.params?.mime) || null;
+  const cropMeta = route?.params?.cropMeta || null;
 
   const inputDataUri = base64 ? `data:${mime || 'image/jpeg'};base64,${base64}` : null;
   const previewUri =
@@ -316,6 +431,7 @@ export default function RemoveBackgroundProcessingScreen({ navigation, route }) 
   const canceledRef = React.useRef(false);
   const [runId, setRunId] = React.useState(0);
   const processedRunIdRef = React.useRef(null);
+  const configErrorShownRef = React.useRef(false);
 
   // Anim values
   const progressA = React.useRef(new Animated.Value(0.06)).current; // 0..1
@@ -407,6 +523,11 @@ export default function RemoveBackgroundProcessingScreen({ navigation, route }) 
         value < 0.84 ? 2 : 3;
 
       if (nextStep !== stepIndex) {
+        logIf('step:change', {
+          from: steps[stepIndex]?.key,
+          to: steps[nextStep]?.key,
+          value: Math.round(value * 100),
+        });
         setStepIndex(nextStep);
         setStatusTitle(steps[nextStep].title);
       }
@@ -414,7 +535,7 @@ export default function RemoveBackgroundProcessingScreen({ navigation, route }) 
       setPercent(Math.round(value * 100));
     });
     return () => progressA.removeListener(id);
-  }, [progressA, stepIndex, steps]);
+  }, [logIf, progressA, stepIndex, steps]);
 
   // Fake progress to 90% while network runs
   React.useEffect(() => {
@@ -431,6 +552,29 @@ export default function RemoveBackgroundProcessingScreen({ navigation, route }) 
 
   // -------------------- processing --------------------
   React.useEffect(() => {
+    if (!isSupabaseConfigured) {
+      if (!configErrorShownRef.current) {
+        configErrorShownRef.current = true;
+        setIsWorking(false);
+        showError({
+          title: 'Setup required',
+          message:
+            'Supabase is not configured. Set SUPABASE_BASE and SUPABASE_ANON_KEY in .env, then restart Metro.',
+          retry: () => navigation.goBack(),
+          retryLabel: 'Go back',
+        });
+      }
+      return;
+    }
+
+    logIf('process:start', {
+      imageUri: formatUriForLog(imageUri),
+      hasBase64: Boolean(base64),
+      mime,
+      previewUri: formatUriForLog(previewUri),
+      cropMeta,
+    });
+
     if (processedRunIdRef.current === runId) return;
     processedRunIdRef.current = runId;
 
@@ -446,30 +590,92 @@ export default function RemoveBackgroundProcessingScreen({ navigation, route }) 
         setIsWorking(true);
 
         const inputDims = await getImageSizeAsync(previewUri).catch(() => null);
+        logIf('input:size', { uri: formatUriForLog(previewUri), ...(inputDims || {}) });
+
+        logIf('input:source', {
+          platform: Platform.OS,
+          imageUri: formatUriForLog(imageUri),
+          previewUri: formatUriForLog(previewUri),
+          imageUriKind: isDataUri(imageUri) ? 'data' : isHttpUrl(imageUri) ? 'http' : isLocalUri(imageUri) ? 'local' : imageUri ? 'other' : null,
+          previewUriKind: isDataUri(previewUri) ? 'data' : isHttpUrl(previewUri) ? 'http' : isLocalUri(previewUri) ? 'local' : previewUri ? 'other' : null,
+          hasBase64: Boolean(base64),
+          base64Len: base64 ? base64.length : 0,
+          mime,
+        });
 
         const exifOrientation =
-          Platform.OS === 'ios' ? await getExifOrientationAsync({ imageUri, base64, mime }) : null;
+          Platform.OS === 'ios' ? await getExifOrientationAsync({ imageUri, base64, mime, debug: debugLogs }) : null;
+        if (Platform.OS !== 'ios') {
+          logIf('input:exif:skip', { platform: Platform.OS });
+        }
         const rotationDegrees = rotationDegreesFromExif(exifOrientation);
+        logIf('input:exif', { exifOrientation, rotationDegrees });
 
         const inputImage = await buildInputImage({ imageUri, base64, mime });
-
-        if (canceledRef.current) return;
-
-        const { data, error } = await supabase.functions.invoke('smart-api', {
-          body: {
-            inputImage,
-            outputFormat: 'PNG',
-            outputQuality: 85,
-            outputType: ['URL'],
-            includeCost: false,
-          },
+        logIf('input:image', {
+          kind: isDataUri(inputImage) ? 'data' : isHttpUrl(inputImage) ? 'http' : 'other',
+          length: String(inputImage || '').length,
         });
 
         if (canceledRef.current) return;
-        if (error) throw createAppError('background_removal_failed', { cause: error });
 
+        const payload = {
+          inputImage,
+          outputFormat: 'PNG',
+          outputQuality: 85,
+          outputType: ['URL'],
+          includeCost: false,
+          inputSize: inputDims || cropMeta?.outputSize || null,
+          crop: cropMeta || null,
+        };
+
+        logIf('smart-api:request', {
+          inputType: isDataUri(inputImage) ? 'data' : isHttpUrl(inputImage) ? 'http' : 'other',
+          inputLen: String(inputImage || '').length,
+          inputSize: payload.inputSize,
+          crop: cropMeta ? { ratio: cropMeta.ratio, ratioLabel: cropMeta.ratioLabel } : null,
+        });
+
+        const requestStartedAt = Date.now();
+        let invokeResult = null;
+        try {
+          invokeResult = await supabase.functions.invoke('smart-api', {
+            body: payload,
+          });
+        } catch (invokeError) {
+          logIf('smart-api:invoke:throw', {
+            message: invokeError?.message || String(invokeError),
+            name: invokeError?.name,
+          });
+          throw invokeError;
+        }
+        const requestMs = Date.now() - requestStartedAt;
+        const { data, error } = invokeResult || {};
+        logIf('smart-api:invoke:done', { ms: requestMs, hasData: Boolean(data), hasError: Boolean(error) });
+
+        if (canceledRef.current) return;
+        if (error) {
+          logIf('smart-api:error', {
+            message: error?.message || String(error),
+            status: error?.status,
+            name: error?.name,
+            details: error?.details,
+            hint: error?.hint,
+            ms: requestMs,
+          });
+          throw createAppError('background_removal_failed', { cause: error });
+        }
+
+        logIf('smart-api:response', formatResponseForLog(data));
         const outUrl = data?.images?.[0]?.url || data?.imageUrl || data?.url;
         if (!outUrl) throw new Error('No output image returned.');
+        logIf('smart-api:response:summary', {
+          hasImages: Array.isArray(data?.images),
+          imageCount: data?.images?.length || 0,
+          status: data?.status || null,
+          model: data?.model || null,
+        });
+        logIf('output:url', { outUrl: formatUriForLog(outUrl) });
 
         // Smoothly complete UI
         await new Promise((r) => {
@@ -486,8 +692,10 @@ export default function RemoveBackgroundProcessingScreen({ navigation, route }) 
 
         try {
           localCutoutUri = await downloadCutoutToCache(outUrl);
+          logIf('output:downloaded', { uri: formatUriForLog(localCutoutUri) });
 
           const outDims = await getImageSizeAsync(localCutoutUri).catch(() => null);
+          logIf('output:size', outDims);
           if (inputDims && outDims) {
             const inputPortrait = inputDims.height > inputDims.width;
             const outPortrait = outDims.height > outDims.width;
@@ -507,19 +715,37 @@ export default function RemoveBackgroundProcessingScreen({ navigation, route }) 
               typeof localCutoutUri === 'string' && localCutoutUri.startsWith('file://');
             const shouldRotateCutout =
               ratioSwapLikely && canRotateFile && (rotationDegrees === 90 || rotationDegrees === 270);
+            logIf('output:ratio', {
+              inputRatio,
+              outRatio,
+              reciprocal,
+              ratioSwapLikely,
+              inputDims,
+              outDims,
+            });
+            logIf('output:rotate', {
+              ratioSwapLikely,
+              canRotateFile,
+              rotationDegrees,
+              shouldRotateCutout,
+            });
 
             if (shouldRotateCutout) {
               try {
                 localCutoutUri = await rotatePngFileWithSkia({
                   uri: localCutoutUri,
                   degrees: rotationDegrees,
+                  debug: debugLogs,
                 });
+                logIf('output:rotated', { uri: formatUriForLog(localCutoutUri) });
               } catch (e) {
+                logIf('output:rotate:error', { message: e?.message || String(e) });
                 // ignore: falls back to unrotated cutout
               }
             }
           }
         } catch (downloadError) {
+          logIf('output:download:error', { message: downloadError?.message || String(downloadError) });
           localCutoutUri = outUrl;
         }
 
@@ -533,6 +759,7 @@ export default function RemoveBackgroundProcessingScreen({ navigation, route }) 
             subjectUri: localCutoutUri,
             originalUri: imageUri,
             processingFinishedAt: finishedAt,
+            cropMeta,
           });
         }, 350);
       } catch (e) {
@@ -541,7 +768,20 @@ export default function RemoveBackgroundProcessingScreen({ navigation, route }) 
         showAppError(e, { retry, retryLabel: 'Try again' });
       }
     })();
-  }, [navigation, imageUri, base64, mime, previewUri, progressA, retry, runId, showAppError]);
+  }, [
+    base64,
+    cropMeta,
+    imageUri,
+    logIf,
+    mime,
+    navigation,
+    previewUri,
+    progressA,
+    retry,
+    runId,
+    showAppError,
+    showError,
+  ]);
 
   const onCancel = React.useCallback(() => {
     if (!isWorking) {

@@ -9,6 +9,7 @@ import RemoveBackgroundProcessingScreen from '../screens/RemoveBackgroundProcess
 import ObjectRemoverScreen from '../screens/ObjectRemoverScreen';
 import BackgroundEditorScreen from '../screens/BackgroundEditorScreen';
 import ExportScreen from '../screens/ExportScreen';
+import CropScreen from '../screens/CropScreen';
 import OnboardingScreen from '../screens/Onboarding/OnboardingScreen';
 import PaywallScreen from '../screens/PaywallScreen';
 import SimpleHeader from '../components/SimpleHeader';
@@ -38,6 +39,7 @@ const RemoveBackgroundProcessingScreenWithBoundary = withScreenErrorBoundary(Rem
 const ObjectRemoverScreenWithBoundary = withScreenErrorBoundary(ObjectRemoverScreen);
 const BackgroundEditorScreenWithBoundary = withScreenErrorBoundary(BackgroundEditorScreen);
 const ExportScreenWithBoundary = withScreenErrorBoundary(ExportScreen);
+const CropScreenWithBoundary = withScreenErrorBoundary(CropScreen);
 const OnboardingScreenWithBoundary = withScreenErrorBoundary(OnboardingScreen);
 const PaywallScreenWithBoundary = withScreenErrorBoundary(PaywallScreen);
 
@@ -105,6 +107,7 @@ export default function AppNavigator() {
         component={RemoveBackgroundProcessingScreenWithBoundary}
         options={{ title: 'Removing Background' }}
       />
+      <Stack.Screen name="Crop" component={CropScreenWithBoundary} options={{ headerShown: false }} />
       <Stack.Screen name="BackgroundEditor" component={BackgroundEditorScreenWithBoundary} options={{ title: 'Skia Editor' }} />
       {/* Removed Refine and Adjust routes */}
       <Stack.Screen name="Export" component={ExportScreenWithBoundary} options={{ title: 'Export' }} />

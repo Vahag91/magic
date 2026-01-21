@@ -2,7 +2,7 @@
 import { decode as base64Decode } from 'base-64';
 import { ImageFormat, Skia } from '@shopify/react-native-skia';
 import RNFS from 'react-native-fs';
-import { createLogger } from '../../logger';
+import { createLogger } from './logger';
 
 function isDev() {
   return typeof __DEV__ !== 'undefined' && __DEV__;
@@ -125,40 +125,6 @@ function getExifOrientationFromJpegBytes(bytes) {
   return null;
 }
 
-function getJpegSizeFromBytes(bytes) {
-  if (!bytes || bytes.length < 4) return null;
-  if (bytes[0] !== 0xff || bytes[1] !== 0xd8) return null; // SOI
-
-  let offset = 2;
-  while (offset + 9 < bytes.length) {
-    if (bytes[offset] !== 0xff) {
-      offset += 1;
-      continue;
-    }
-
-    const marker = bytes[offset + 1];
-    if (marker === 0xd9 || marker === 0xda) break; // EOI / SOS
-
-    const length = ((bytes[offset + 2] << 8) | bytes[offset + 3]) >>> 0;
-    if (length < 2) return null;
-
-    const isSOF =
-      (marker >= 0xc0 && marker <= 0xc3) ||
-      (marker >= 0xc5 && marker <= 0xc7) ||
-      (marker >= 0xc9 && marker <= 0xcb) ||
-      (marker >= 0xcd && marker <= 0xcf);
-    if (isSOF && offset + 8 < bytes.length) {
-      const height = ((bytes[offset + 5] << 8) | bytes[offset + 6]) >>> 0;
-      const width = ((bytes[offset + 7] << 8) | bytes[offset + 8]) >>> 0;
-      if (width && height) return { width, height };
-    }
-
-    offset += 2 + length;
-  }
-
-  return null;
-}
-
 function rotationDegreesFromExif(orientation) {
   if (orientation === 6) return 90;
   if (orientation === 8) return 270;
@@ -198,65 +164,6 @@ export function getExifOrientationFromJpegBase64(base64, maxBytes = EXIF_SCAN_BY
   }
 }
 
-export function getJpegSizeFromBase64(base64, maxBytes = EXIF_SCAN_BYTES) {
-  try {
-    const s = String(base64 || '');
-    const idx = s.indexOf('base64,');
-    const raw = idx === -1 ? s : s.slice(idx + 'base64,'.length);
-    const bytes = base64ToBytes(raw, maxBytes);
-    return getJpegSizeFromBytes(bytes);
-  } catch {
-    return null;
-  }
-}
-
-export async function getJpegSizeFromUri({ uri, debug, tag }) {
-  try {
-    if (typeof uri !== 'string') return null;
-
-    if (uri.startsWith('file://')) {
-      const path = uri.replace(/^file:\/\//i, '');
-      let chunk;
-      let method = 'read';
-      try {
-        chunk = await RNFS.read(path, EXIF_SCAN_BYTES, 0, 'base64');
-      } catch (e) {
-        logIf(debug, tag, 'jpeg:file:readError', { uri: shortUri(uri), message: e?.message || String(e) });
-        method = 'readFile';
-        try {
-          chunk = await RNFS.readFile(path, 'base64');
-        } catch (e2) {
-          logIf(debug, tag, 'jpeg:file:readFileError', { uri: shortUri(uri), message: e2?.message || String(e2) });
-          return null;
-        }
-      }
-
-      const bytes = base64ToBytes(chunk, EXIF_SCAN_BYTES);
-      const size = getJpegSizeFromBytes(bytes);
-      logIf(debug, tag, 'jpeg:file', { uri: shortUri(uri), size, method });
-      return size;
-    }
-
-    let dataUri;
-    try {
-      dataUri = await uriToDataUri(uri);
-    } catch (e) {
-      logIf(debug, tag, 'jpeg:fetch:readError', { uri: shortUri(uri), message: e?.message || String(e) });
-      return null;
-    }
-    const base64 = String(dataUri || '');
-    const idx = base64.indexOf('base64,');
-    if (idx === -1) return null;
-    const bytes = base64ToBytes(base64.slice(idx + 'base64,'.length), EXIF_SCAN_BYTES);
-    const size = getJpegSizeFromBytes(bytes);
-    logIf(debug, tag, 'jpeg:fetch', { uri: shortUri(uri), size });
-    return size;
-  } catch (e) {
-    logIf(debug, tag, 'jpeg:error', { uri: shortUri(uri), message: e?.message || String(e) });
-    return null;
-  }
-}
-
 export async function getExifOrientationFromUri({ uri, debug, tag }) {
   try {
     if (typeof uri !== 'string') return null;
@@ -291,7 +198,7 @@ export async function getExifOrientationFromUri({ uri, debug, tag }) {
       return orientation;
     }
 
-    // content:// or other schemes: fetch + inspect the first chunk via data URI
+    // content:// or other schemes: fetch + inspect first chunk
     let dataUri;
     try {
       dataUri = await uriToDataUri(uri);
@@ -305,13 +212,6 @@ export async function getExifOrientationFromUri({ uri, debug, tag }) {
     const bytes = base64ToBytes(base64.slice(idx + 'base64,'.length), EXIF_SCAN_BYTES);
     const orientation = getExifOrientationFromJpegBytes(bytes);
     logIf(debug, tag, 'exif:fetch', { uri: shortUri(uri), orientation });
-    if (orientation == null) {
-      logIf(debug, tag, 'exif:fetch:debug', {
-        bytesLen: bytes.length,
-        sig: bytesSignature(bytes),
-        isJpegSOI: bytes.length >= 2 ? bytes[0] === 0xff && bytes[1] === 0xd8 : null,
-      });
-    }
     return orientation;
   } catch (e) {
     logIf(debug, tag, 'exif:error', { uri: shortUri(uri), message: e?.message || String(e) });
@@ -332,27 +232,7 @@ async function skiaDataFromUri(uri) {
   }
 }
 
-async function rotateFileWithSkia({ uri, degrees, debug, tag }) {
-  const rot = ((degrees % 360) + 360) % 360;
-  if (!rot) {
-    logIf(debug, tag, 'rotate:skip', { uri: shortUri(uri), degrees: 0 });
-    return uri;
-  }
-
-  const data = await skiaDataFromUri(uri);
-  const image = Skia.Image.MakeImageFromEncoded(data);
-  if (!image) throw new Error('Skia failed to decode image.');
-
-  const w = image.width();
-  const h = image.height();
-  const outW = rot === 90 || rot === 270 ? h : w;
-  const outH = rot === 90 || rot === 270 ? w : h;
-
-  logIf(debug, tag, 'rotate:start', { uri: shortUri(uri), degrees: rot, w, h, outW, outH });
-
-  const surface = Skia.Surface.Make(outW, outH);
-  if (!surface) throw new Error('Skia surface creation failed.');
-
+function drawRotatedToSurface({ surface, image, rot, outW, outH }) {
   const canvas = surface.getCanvas();
   canvas.clear(Skia.Color('#00000000'));
   canvas.save();
@@ -367,46 +247,117 @@ async function rotateFileWithSkia({ uri, degrees, debug, tag }) {
     canvas.translate(0, outH);
     canvas.rotate(270, 0, 0);
   }
-
   canvas.drawImage(image, 0, 0);
   canvas.restore();
   surface.flush();
-  image.dispose?.();
-
-  const snapshot = surface.makeImageSnapshot();
-  if (!snapshot) throw new Error('Snapshot failed.');
-
-  const outBase64 = snapshot.encodeToBase64(ImageFormat.PNG, 100);
-  snapshot.dispose?.();
-  if (!outBase64) throw new Error('Encoding failed.');
-
-  const outPath = `${RNFS.CachesDirectoryPath}/objectremover-upright-${Date.now()}.png`;
-  await RNFS.writeFile(outPath, outBase64, 'base64');
-  const outUri = `file://${outPath}`;
-  logIf(debug, tag, 'rotate:done', { outUri: shortUri(outUri) });
-  return outUri;
 }
 
-export async function ensureUprightImageUri({ uri, mimeType, exifOrientation, debug = isDev(), tag = 'ensureUpright' }) {
-  if (!uri) return { uri: null, rotated: false, degrees: 0 };
+function snapshotToPngFile(snapshot, prefix = 'img') {
+  const outBase64 = snapshot.encodeToBase64(ImageFormat.PNG, 100);
+  if (!outBase64) throw new Error('Encoding failed.');
+
+  const outPath = `${RNFS.CachesDirectoryPath}/${prefix}-${Date.now()}.png`;
+  return RNFS.writeFile(outPath, outBase64, 'base64').then(() => `file://${outPath}`);
+}
+
+/**
+ * ✅ Fixes your exact bug:
+ * - Decodes original bytes (JPEG with EXIF)
+ * - Rotates pixels to upright using EXIF orientation
+ * - Crops in the upright coordinate space
+ * - Encodes PNG (no EXIF -> cannot rotate wrongly later)
+ */
+export async function normalizeAndCropToPng({
+  uri,
+  mimeType,
+  exifOrientation,
+  cropRect,
+  debug = isDev(),
+  tag = 'normalizeAndCrop',
+}) {
+  if (!uri) return { uri: null, mimeType: 'image/png' };
+
   const providedOrientation = Number(exifOrientation) || null;
   const maybeJpeg = providedOrientation ? true : isMaybeJpeg({ uri, mimeType });
+
+  const orientation =
+    providedOrientation || (maybeJpeg ? await getExifOrientationFromUri({ uri, debug, tag }) : 1);
+
+  const degrees = rotationDegreesFromExif(orientation);
+  const rot = ((degrees % 360) + 360) % 360;
 
   logIf(debug, tag, 'input', {
     uri: shortUri(uri),
     mimeType: mimeType ? String(mimeType) : null,
-    providedOrientation,
-    maybeJpeg,
+    orientation,
+    degrees: rot,
+    cropRect,
   });
 
-  const orientation =
-    providedOrientation || (maybeJpeg ? await getExifOrientationFromUri({ uri, debug, tag }) : null);
-  const degrees = rotationDegreesFromExif(orientation);
-  logIf(debug, tag, 'computed', { orientation, degrees });
-  if (!degrees) return { uri, rotated: false, degrees: 0 };
+  // 1) Decode
+  const data = await skiaDataFromUri(uri);
+  const img = Skia.Image.MakeImageFromEncoded(data);
+  if (!img) throw new Error('Skia failed to decode image.');
 
-  const outUri = await rotateFileWithSkia({ uri, degrees, debug, tag });
-  return { uri: outUri, rotated: outUri !== uri, degrees };
+  // 2) Make upright image snapshot
+  let uprightSnapshot = null;
+  let uprightW = img.width();
+  let uprightH = img.height();
+
+  if (rot === 90 || rot === 270) {
+    uprightW = img.height();
+    uprightH = img.width();
+  }
+
+  if (rot) {
+    const surface = Skia.Surface.Make(uprightW, uprightH);
+    if (!surface) throw new Error('Skia surface creation failed (upright).');
+    drawRotatedToSurface({ surface, image: img, rot, outW: uprightW, outH: uprightH });
+    uprightSnapshot = surface.makeImageSnapshot();
+  } else {
+    // snapshot directly (still no EXIF afterwards)
+    const surface = Skia.Surface.Make(uprightW, uprightH);
+    if (!surface) throw new Error('Skia surface creation failed (copy).');
+    const canvas = surface.getCanvas();
+    canvas.clear(Skia.Color('#00000000'));
+    canvas.drawImage(img, 0, 0);
+    surface.flush();
+    uprightSnapshot = surface.makeImageSnapshot();
+  }
+
+  if (!uprightSnapshot) throw new Error('Snapshot failed (upright).');
+
+  // 3) Crop in upright space
+  const x = Math.max(0, Math.round(cropRect?.offset?.x || 0));
+  const y = Math.max(0, Math.round(cropRect?.offset?.y || 0));
+  const cw = Math.max(1, Math.round(cropRect?.size?.width || uprightW));
+  const ch = Math.max(1, Math.round(cropRect?.size?.height || uprightH));
+
+  const cropSurface = Skia.Surface.Make(cw, ch);
+  if (!cropSurface) throw new Error('Skia surface creation failed (crop).');
+
+  const cropCanvas = cropSurface.getCanvas();
+  cropCanvas.clear(Skia.Color('#00000000'));
+
+  const src = Skia.XYWHRect(x, y, cw, ch);
+  const dst = Skia.XYWHRect(0, 0, cw, ch);
+  cropCanvas.drawImageRect(uprightSnapshot, src, dst);
+
+  cropSurface.flush();
+
+  const croppedSnapshot = cropSurface.makeImageSnapshot();
+  if (!croppedSnapshot) throw new Error('Snapshot failed (crop).');
+
+  // 4) Encode to PNG file (no EXIF)
+  const outUri = await snapshotToPngFile(croppedSnapshot, 'crop-upright');
+
+  logIf(debug, tag, 'done', {
+    outUri: shortUri(outUri),
+    outW: cw,
+    outH: ch,
+    outputMime: 'image/png',
+  });
+
+  return { uri: outUri, mimeType: 'image/png', width: cw, height: ch };
 }
-
 /* eslint-enable no-bitwise */

@@ -2,6 +2,10 @@
 #
 .DS_Store
 
+# Local env
+.env
+src/config/env.local.js
+
 # Xcode
 #
 build/

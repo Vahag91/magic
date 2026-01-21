@@ -179,4 +179,7 @@ const DraggableTextItem = ({ layer, selectedId, onSelect, onUpdate }) => {
 const styles = StyleSheet.create({
 
 });
-export { CustomSlider };
+function stripFileScheme(uri) {
+  return String(uri || '').replace(/^file:\/\//i, '');
+}
+export { CustomSlider, stripFileScheme };
