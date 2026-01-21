@@ -1,8 +1,11 @@
 import * as React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 
+// Keep import (already in project). Not used now.
+import LinearGradient from 'react-native-linear-gradient';
+
 import { colors, hitSlop10 } from '../styles';
-import { SettingsIcon } from './icons';
+import { GetPremiumIcon, SettingsIcon } from './icons';
 import { useSubscription } from '../providers/SubscriptionProvider';
 
 const COLORS = {
@@ -12,34 +15,41 @@ const COLORS = {
   text: colors.text,
   muted: colors.muted,
   border: colors.border,
+
+  // Flat “gold” (no gradient)
+  premiumBg: '#F2B705',
+  premiumBgPressed: '#E3AA00',
+  premiumBorder: 'rgba(0,0,0,0.06)',
 };
 
 export default function HomeHeader({
+  navigation,
   onPressSettings,
   showDivider = true,
 }) {
   const { isPremium } = useSubscription();
-
   const canPressSettings = typeof onPressSettings === 'function';
+
+  const handleGetPremium = () => {
+    if (navigation) navigation.navigate('Paywall');
+  };
 
   return (
     <View style={styles.wrap}>
       <View style={styles.row}>
         {/* Left */}
         <View style={styles.left}>
-          <View style={styles.mark} accessibilityLabel="App icon">
-            <Text style={styles.markText}>M</Text>
-          </View>
+          {isPremium ? (
+            <View style={styles.premiumChip} accessibilityLabel="Premium active">
+              <Text style={styles.premiumChipText}>Premium</Text>
+            </View>
+          ) : (
+            <GetPremiumButton onPress={handleGetPremium} />
+          )}
         </View>
 
         {/* Right */}
         <View style={styles.right}>
-          {isPremium ? (
-            <View style={styles.proChip} accessibilityLabel="Premium active">
-              <Text style={styles.proText}>PRO</Text>
-            </View>
-          ) : null}
-
           <TouchableOpacity
             onPress={canPressSettings ? onPressSettings : undefined}
             disabled={!canPressSettings}
@@ -49,7 +59,7 @@ export default function HomeHeader({
             accessibilityLabel="Settings"
             style={[styles.iconBtn, !canPressSettings && styles.disabled]}
           >
-            <SettingsIcon size={20} color={COLORS.text} />
+            <SettingsIcon size={23} color={COLORS.text} />
           </TouchableOpacity>
         </View>
       </View>
@@ -59,8 +69,30 @@ export default function HomeHeader({
   );
 }
 
+function GetPremiumButton({ onPress }) {
+  const [pressed, setPressed] = React.useState(false);
+
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.92}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      style={[
+        styles.premiumBtn,
+        { backgroundColor: pressed ? COLORS.premiumBgPressed : COLORS.premiumBg },
+      ]}
+      accessibilityRole="button"
+      accessibilityLabel="Get Premium"
+    >
+      <GetPremiumIcon color={COLORS.white} size={16} />
+      <Text style={styles.premiumBtnText}>Premium</Text>
+    </TouchableOpacity>
+  );
+}
+
 const styles = StyleSheet.create({
-  wrap: { width: '100%', paddingTop: 6, paddingBottom: 6 },
+  wrap: { width: '100%', paddingTop: 10, paddingBottom: 10 },
 
   row: {
     flexDirection: 'row',
@@ -80,22 +112,51 @@ const styles = StyleSheet.create({
     minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
   },
 
-  mark: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: '#0F172A',
+  // Smaller, cleaner Premium button
+  premiumBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    height: 34,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: COLORS.premiumBorder,
+    gap: 6,
+    ...Platform.select({
+      ios: {
+        shadowColor: 'rgba(242, 183, 5, 0.45)',
+        shadowOpacity: 0.22,
+        shadowRadius: 10,
+        shadowOffset: { width: 0, height: 5 },
+      },
+      android: { elevation: 3 },
+    }),
+  },
+  premiumBtnText: {
+    color: COLORS.white,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.2,
+  },
+
+  // Premium active: subtle chip (smaller than before)
+  premiumChip: {
+    height: 34,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: 'rgba(34,197,94,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(34,197,94,0.18)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  markText: {
-    color: '#fff',
-    fontSize: 16,
+  premiumChipText: {
+    color: '#16A34A',
     fontWeight: '900',
-    letterSpacing: -0.2,
+    fontSize: 12,
+    letterSpacing: 0.2,
   },
 
   right: {
@@ -104,26 +165,9 @@ const styles = StyleSheet.create({
     gap: 10,
   },
 
-  proChip: {
-    height: 34,
-    paddingHorizontal: 12,
-    borderRadius: 999,
-    backgroundColor: 'rgba(15, 23, 42, 0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(15, 23, 42, 0.10)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  proText: {
-    color: COLORS.text,
-    fontSize: 12,
-    fontWeight: '900',
-    letterSpacing: 0.8,
-  },
-
   iconBtn: {
-    width: 38,
-    height: 38,
+    width: 40,
+    height: 40,
     borderRadius: 14,
     backgroundColor: COLORS.white,
     borderWidth: 1,

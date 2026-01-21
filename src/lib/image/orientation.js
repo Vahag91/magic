@@ -1,6 +1,6 @@
 import { Platform, Image } from 'react-native';
 import ImageResizer from 'react-native-image-resizer';
-import { stripFileScheme } from '../../utils';
+import * as utils from '../../utils';
 
 // Default options for ImageResizer
 const RESIZE_OPTIONS = {
@@ -16,7 +16,7 @@ export const normalizeImageOrientation = async ({ uri, mime }) => {
   }
 
   try {
-    const path = stripFileScheme(uri);
+    const path = utils.stripFileScheme(uri);
     const size = await new Promise((resolve, reject) => {
       Image.getSize(uri, (width, height) => resolve({ width, height }), reject);
     });

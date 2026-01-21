@@ -263,14 +263,6 @@ export default function CropScreen({ navigation, route }) {
         base64HeadType: headType,
       });
 
-      if (workingBase64 && (headType === 'webp' || headType === 'heic/heif' || workingMime.includes('heic') || workingMime.includes('heif') || workingMime.includes('webp'))) {
-        logIf('warn:unsupported-base64-format', {
-          headType,
-          workingMime,
-          message: 'If you see rotation/failed processing, force JPEG output in launchImageLibrary (maxWidth/maxHeight).',
-        });
-      }
-
       if (workingBase64) {
         tempInputUri = await writeTempFromBase64({
           base64: workingBase64,

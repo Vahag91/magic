@@ -77,6 +77,7 @@ function formatUriForLog(uri) {
   return s.length > 180 ? `${s.slice(0, 180)}…` : s;
 }
 
+
 function isHttpUrl(s) {
   return typeof s === 'string' && /^https?:\/\//i.test(s);
 }

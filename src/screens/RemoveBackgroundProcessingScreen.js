@@ -127,7 +127,7 @@ async function localUriToDataUri(uri, mime) {
 async function buildInputImage({ imageUri, base64, mime }) {
   if (base64) {
     const safeMime = normalizeMime(mime) || 'image/jpeg';
-    return `data:${safeMime};base64,${base64}`;
+    return  `data:${safeMime};base64,${String(base64 || '').replace(/\s+/g, '')}`;
   }
   if (isHttpUrl(imageUri) || isDataUri(imageUri)) return imageUri;
   if (isLocalUri(imageUri)) {
@@ -623,10 +623,11 @@ export default function RemoveBackgroundProcessingScreen({ navigation, route }) 
           inputImage,
           outputFormat: 'PNG',
           outputQuality: 85,
-          outputType: ['URL'],
+          outputType: 'URL',
           includeCost: false,
           inputSize: inputDims || cropMeta?.outputSize || null,
           crop: cropMeta || null,
+          debug: true
         };
 
         logIf('smart-api:request', {

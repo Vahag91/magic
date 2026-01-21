@@ -1,3 +1,4 @@
+export { default as AppIcon } from './AppIcon';
 export { default as ArrowLeftIcon } from './ArrowLeftIcon';
 export { default as ArrowRightIcon } from './ArrowRightIcon';
 export { default as ArrowBackIcon } from './ArrowBackIcon';
@@ -7,6 +8,7 @@ export { default as BlurIcon } from './BlurIcon';
 export { default as CheckIcon } from './CheckIcon';
 export { default as ChevronRightIcon } from './ChevronRightIcon';
 export { default as FolderOpenIcon } from './FolderOpenIcon';
+export { default as GetPremiumIcon } from './GetPremiumIcon';
 export { default as GradientIcon } from './GradientIcon';
 export { default as HDIcon } from './HDIcon';
 export { default as ImageIcon } from './ImageIcon';

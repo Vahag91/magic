@@ -1,10 +1,6 @@
 import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { launchImageLibrary } from 'react-native-image-picker';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-} from 'react-native';
+import { View, Text, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useError } from '../../providers/ErrorProvider';
 import { createLogger } from '../../logger';
@@ -28,6 +24,7 @@ export default function BackgroundEditorScreen({ navigation, route }) {
   const cutoutUri = paramResult || null;
   const originalUri = paramOriginal || paramResult || null;
   const hasInput = Boolean(cutoutUri || originalUri);
+
   const debugLogs = typeof __DEV__ !== 'undefined' && __DEV__;
   const logIf = useCallback(
     (event, payload) => {
@@ -37,9 +34,7 @@ export default function BackgroundEditorScreen({ navigation, route }) {
     [debugLogs],
   );
 
-  const [subjectVariant, setSubjectVariant] = useState(
-    paramResult ? 'cutout' : 'original',
-  );
+  const [subjectVariant, setSubjectVariant] = useState(paramResult ? 'cutout' : 'original');
   const [mode, setMode] = useState('clear');
   const [showCheckerboard, setShowCheckerboard] = useState(true);
   const [blurStrength, setBlurStrength] = useState(10);
@@ -50,6 +45,7 @@ export default function BackgroundEditorScreen({ navigation, route }) {
   const [gradientStartColor, setGradientStartColor] = useState(PALETTE[2]);
   const [gradientEndColor, setGradientEndColor] = useState(PALETTE[4]);
   const [bgImageUri, setBgImageUri] = useState(null);
+
   const [bgFilters, setBgFilters] = useState({
     brightness: 100,
     contrast: 100,
@@ -62,6 +58,7 @@ export default function BackgroundEditorScreen({ navigation, route }) {
     saturation: 100,
     sepia: 0,
   });
+
   const [shadow, setShadow] = useState({
     enabled: false,
     blur: 10,
@@ -72,14 +69,12 @@ export default function BackgroundEditorScreen({ navigation, route }) {
 
   const [activeLayer, setActiveLayer] = useState('subject');
   const [subjectTool, setSubjectTool] = useState('move');
-  const [subjectTransform, setSubjectTransform] = useState({
-    x: 0,
-    y: 0,
-    scale: 1,
-  });
+  const [subjectTransform, setSubjectTransform] = useState({ x: 0, y: 0, scale: 1 });
   const [brushSettings, setBrushSettings] = useState({ size: 30 });
+
   const [eraserPaths, setEraserPaths] = useState([]);
   const [redoPaths, setRedoPaths] = useState([]);
+
   const [bgTool, setBgTool] = useState('move');
   const [bgTransform, setBgTransform] = useState({ x: 0, y: 0, scale: 1 });
   const [bgOpacity, setBgOpacity] = useState(100);
@@ -87,11 +82,8 @@ export default function BackgroundEditorScreen({ navigation, route }) {
   const [textLayers, setTextLayers] = useState([]);
   const [selectedTextId, setSelectedTextId] = useState(null);
   const [textFocusToken, setTextFocusToken] = useState(0);
+
   const [previewBounds, setPreviewBounds] = useState({ width: 0, height: 0 });
-  const [exportConfig, setExportConfig] = useState(null);
-  const [exportReady, setExportReady] = useState(false);
-  const exportPreviewRef = useRef(null);
-  const exportPromiseRef = useRef(null);
 
   const activeSubjectUri = useMemo(
     () => (subjectVariant === 'cutout' ? cutoutUri : originalUri),
@@ -103,9 +95,11 @@ export default function BackgroundEditorScreen({ navigation, route }) {
     if (Number.isFinite(ratio) && ratio > 0) return ratio;
     return CANVAS_ASPECT;
   }, [cropMeta?.ratio]);
+
   const canvasSize = useMemo(() => {
     const fallbackWidth = CANVAS_WIDTH;
     const fallbackHeight = fallbackWidth / (cropRatio || CANVAS_ASPECT);
+
     const width = Number(previewBounds?.width) || 0;
     const height = Number(previewBounds?.height) || 0;
     if (!width || !height) return { width: fallbackWidth, height: fallbackHeight };
@@ -116,143 +110,23 @@ export default function BackgroundEditorScreen({ navigation, route }) {
       nextHeight = height;
       nextWidth = nextHeight * (cropRatio || CANVAS_ASPECT);
     }
+
     if (!nextWidth || !nextHeight) return { width: fallbackWidth, height: fallbackHeight };
     return { width: nextWidth, height: nextHeight };
   }, [cropRatio, previewBounds?.height, previewBounds?.width]);
+
   const exportTargetSize = useMemo(() => {
     const width = Number(cropMeta?.outputSize?.width) || 0;
     const height = Number(cropMeta?.outputSize?.height) || 0;
     if (!width || !height) return null;
     return { width, height };
   }, [cropMeta?.outputSize?.height, cropMeta?.outputSize?.width]);
-  const exportTargetScale = useMemo(() => {
-    const targetW = Number(exportTargetSize?.width) || 0;
-    const targetH = Number(exportTargetSize?.height) || 0;
-    const baseW = Number(canvasSize.width) || 0;
-    const baseH = Number(canvasSize.height) || 0;
-    if (!targetW || !targetH || !baseW || !baseH) return 1;
-    const scaleW = targetW / baseW;
-    const scaleH = targetH / baseH;
-    if (!Number.isFinite(scaleW) || !Number.isFinite(scaleH)) return 1;
-    return Math.min(scaleW, scaleH);
-  }, [canvasSize.height, canvasSize.width, exportTargetSize?.height, exportTargetSize?.width]);
-  const exportScale = useMemo(() => {
-    const targetW = Number(exportConfig?.width) || 0;
-    const targetH = Number(exportConfig?.height) || 0;
-    const baseW = Number(canvasSize.width) || 0;
-    const baseH = Number(canvasSize.height) || 0;
-    if (!targetW || !targetH || !baseW || !baseH) return 1;
-    const scaleW = targetW / baseW;
-    const scaleH = targetH / baseH;
-    if (!Number.isFinite(scaleW) || !Number.isFinite(scaleH)) return 1;
-    return Math.min(scaleW, scaleH);
-  }, [canvasSize.height, canvasSize.width, exportConfig?.height, exportConfig?.width]);
-
-  const exportSubjectTransform = useMemo(() => {
-    if (!exportConfig || exportScale === 1) return subjectTransform;
-    return {
-      ...subjectTransform,
-      x: subjectTransform.x * exportScale,
-      y: subjectTransform.y * exportScale,
-    };
-  }, [exportConfig, exportScale, subjectTransform]);
-
-  const exportBgTransform = useMemo(() => {
-    if (!exportConfig || exportScale === 1) return bgTransform;
-    return {
-      ...bgTransform,
-      x: bgTransform.x * exportScale,
-      y: bgTransform.y * exportScale,
-    };
-  }, [bgTransform, exportConfig, exportScale]);
-
-  const exportShadow = useMemo(() => {
-    if (!exportConfig || exportScale === 1) return shadow;
-    return {
-      ...shadow,
-      blur: shadow.blur * exportScale,
-      x: shadow.x * exportScale,
-      y: shadow.y * exportScale,
-    };
-  }, [exportConfig, exportScale, shadow]);
-
-  const exportBrushSettings = useMemo(() => {
-    if (!exportConfig || exportScale === 1) return brushSettings;
-    return { ...brushSettings, size: (brushSettings?.size || 0) * exportScale };
-  }, [brushSettings, exportConfig, exportScale]);
-
-  const exportEraserPaths = useMemo(() => {
-    if (!exportConfig || exportScale === 1) return eraserPaths;
-    const scaleMatrix = [exportScale, 0, 0, 0, exportScale, 0, 0, 0, 1];
-    return (Array.isArray(eraserPaths) ? eraserPaths : []).map((p) => {
-      const nextPath = p?.path?.copy?.() || p?.path;
-      try {
-        nextPath?.transform?.(scaleMatrix);
-      } catch {
-        // ignore
-      }
-      return {
-        ...p,
-        path: nextPath,
-        strokeWidth: (Number(p?.strokeWidth) || 0) * exportScale,
-      };
-    });
-  }, [eraserPaths, exportConfig, exportScale]);
-
-  const exportTextLayers = useMemo(() => {
-    if (!exportConfig || exportScale === 1) return textLayers;
-    return (Array.isArray(textLayers) ? textLayers : []).map((t) => ({
-      ...t,
-      x: (Number(t.x) || 0) * exportScale,
-      y: (Number(t.y) || 0) * exportScale,
-      fontSize: (Number(t.fontSize) || 0) * exportScale,
-    }));
-  }, [exportConfig, exportScale, textLayers]);
 
   const handlePreviewLayout = useCallback((event) => {
     const { width, height } = event?.nativeEvent?.layout || {};
     if (!width || !height) return;
     setPreviewBounds({ width, height });
   }, []);
-
-  const requestExportSnapshot = useCallback((target) => {
-    return new Promise((resolve, reject) => {
-      exportPromiseRef.current = { resolve, reject };
-      setExportReady(false);
-      setExportConfig({
-        id: Date.now(),
-        width: target?.width,
-        height: target?.height,
-      });
-    });
-  }, []);
-
-  const resetExportState = useCallback(() => {
-    exportPromiseRef.current = null;
-    setExportConfig(null);
-    setExportReady(false);
-  }, []);
-
-  React.useEffect(() => {
-    if (!exportConfig || !exportReady) return;
-    let canceled = false;
-    const capture = async () => {
-      await new Promise((r) => requestAnimationFrame(() => r()));
-      if (canceled) return;
-      const snap = exportPreviewRef.current?.makeImageSnapshot?.();
-      if (!snap?.image) {
-        exportPromiseRef.current?.reject?.(new Error('Export render failed.'));
-        resetExportState();
-        return;
-      }
-      exportPromiseRef.current?.resolve?.(snap);
-      resetExportState();
-    };
-    capture();
-    return () => {
-      canceled = true;
-    };
-  }, [exportConfig, exportReady, resetExportState]);
 
   const handlePickImage = async () => {
     try {
@@ -262,12 +136,12 @@ export default function BackgroundEditorScreen({ navigation, route }) {
         setBgImageUri(asset.uri);
         setBgTransform({ x: 0, y: 0, scale: 1 });
       }
-    } catch (e) {
+    } catch {
       // ignore
     }
   };
 
-  const handleSetMode = newMode => {
+  const handleSetMode = (newMode) => {
     logIf('mode:set', { next: newMode });
     if (newMode === 'clear') {
       setMode('clear');
@@ -291,48 +165,56 @@ export default function BackgroundEditorScreen({ navigation, route }) {
   const previewRef = useRef(null);
 
   const handleUndo = useCallback(() => {
-    setEraserPaths(prev => {
+    setEraserPaths((prev) => {
       if (!prev.length) return prev;
       const last = prev[prev.length - 1];
-      setRedoPaths(r => [...r, last]);
+      setRedoPaths((r) => [...r, last]);
       return prev.slice(0, -1);
     });
   }, []);
 
   const handleRedo = useCallback(() => {
-    setRedoPaths(prev => {
+    setRedoPaths((prev) => {
       if (!prev.length) return prev;
       const last = prev[prev.length - 1];
-      setEraserPaths(p => [...p, last]);
+      setEraserPaths((p) => [...p, last]);
       return prev.slice(0, -1);
     });
   }, []);
 
+  /**
+   * ✅ CRASH FIX:
+   * - Snapshot ONLY preview (small).
+   * - Let saveSkiaSnapshotToCache upscale to targetWidth/targetHeight.
+   * This avoids creating a huge offscreen Skia surface (native OOM crash).
+   */
   const handleSave = useCallback(async () => {
     try {
-      const targetSize = exportTargetSize;
-      let snap = null;
-      if (
-        targetSize?.width &&
-        targetSize?.height &&
-        canvasSize.width &&
-        canvasSize.height &&
-        exportTargetScale > 1.01
-      ) {
-        try {
-          snap = await requestExportSnapshot(targetSize);
-        } catch (e) {
-          logIf('export:offscreen:error', { message: e?.message || String(e) });
-        }
-      }
+      const snap = previewRef.current?.makeImageSnapshot?.();
       if (!snap) {
-        snap = previewRef.current?.makeImageSnapshot();
-      }
-      if (!snap?.image) {
         showError();
         return;
       }
-      const { image, width, height } = snap;
+
+      // Your ref might return:
+      // 1) { image, width, height }
+      // 2) SkImage directly
+      const image = snap.image ? snap.image : snap;
+      const width = snap.width ? snap.width : snap.width?.() || canvasSize.width;
+      const height = snap.height ? snap.height : snap.height?.() || canvasSize.height;
+
+      if (!image) {
+        showError();
+        return;
+      }
+
+      logIf('export:previewSnapshot', {
+        previewW: width,
+        previewH: height,
+        targetW: exportTargetSize?.width || null,
+        targetH: exportTargetSize?.height || null,
+      });
+
       try {
         const saved = await saveSkiaSnapshotToCache({
           skImage: image,
@@ -341,13 +223,15 @@ export default function BackgroundEditorScreen({ navigation, route }) {
           targetWidth: exportTargetSize?.width,
           targetHeight: exportTargetSize?.height,
         });
-        logIf('export:save', {
+
+        logIf('export:save:ok', {
           width: saved.width,
           height: saved.height,
           canvasDisplayWidth: canvasSize.width,
           canvasDisplayHeight: canvasSize.height,
           exportTarget: exportTargetSize,
         });
+
         navigation.navigate('Export', {
           resultUri: saved.uri,
           width: saved.width,
@@ -356,7 +240,9 @@ export default function BackgroundEditorScreen({ navigation, route }) {
           canvasDisplayHeight: canvasSize.height,
         });
       } finally {
-        image.dispose();
+        // If `image` is SkImage it should have dispose().
+        // If it's a wrapper, this won't crash due to optional chaining.
+        image.dispose?.();
       }
     } catch (e) {
       showAppError(e, { retry: handleSave, retryLabel: 'Try again' });
@@ -364,11 +250,11 @@ export default function BackgroundEditorScreen({ navigation, route }) {
   }, [
     canvasSize.height,
     canvasSize.width,
-    exportTargetScale,
+    exportTargetSize?.height,
+    exportTargetSize?.width,
     exportTargetSize,
     logIf,
     navigation,
-    requestExportSnapshot,
     showAppError,
     showError,
   ]);
@@ -420,17 +306,17 @@ export default function BackgroundEditorScreen({ navigation, route }) {
       x: xPos - 80,
       y: yPos,
     };
-    setTextLayers(prev => [...prev, newText]);
+    setTextLayers((prev) => [...prev, newText]);
     setSelectedTextId(newText.id);
     setActiveLayer('text');
-    if (focus) setTextFocusToken(t => t + 1);
+    if (focus) setTextFocusToken((t) => t + 1);
   };
 
   const requestTextFocus = useCallback((id) => {
     if (!id) return;
     setActiveLayer('text');
     setSelectedTextId(id);
-    setTextFocusToken(t => t + 1);
+    setTextFocusToken((t) => t + 1);
   }, []);
 
   if (!hasInput) {
@@ -447,114 +333,61 @@ export default function BackgroundEditorScreen({ navigation, route }) {
     );
   }
 
-  const preview = (
-    <View style={styles.previewContainer}>
-      <View style={styles.previewStage} onLayout={handlePreviewLayout}>
-        <SkiaBackgroundPreview
-          ref={previewRef}
-          width={canvasSize.width}
-          height={canvasSize.height}
-        subjectUri={activeSubjectUri}
-        originalUri={originalUri}
-        autoAlignSubjectBottom={subjectVariant === 'cutout'}
-        bgImageUri={bgImageUri}
-        mode={mode}
-        showCheckerboard={showCheckerboard}
-        blurStrength={blurStrength}
-        dimBackground={dimBackground}
-        gradientAngle={gradientAngle}
-        gradientIntensity={gradientIntensity}
-        selectedColor={selectedColor}
-        gradientStartColor={gradientStartColor}
-        gradientEndColor={gradientEndColor}
-        bgOpacity={bgOpacity}
-        subjectFilters={subjectFilters}
-        bgFilters={bgFilters}
-        shadow={shadow}
-        subjectTransform={subjectTransform}
-        onSubjectTransformChange={setSubjectTransform}
-        subjectTool={subjectTool}
-        brushSettings={brushSettings}
-        bgTransform={bgTransform}
-        onBgTransformChange={setBgTransform}
-        bgTool={bgTool}
-        eraserPaths={eraserPaths}
-        setEraserPaths={setEraserPaths}
-        setRedoPaths={setRedoPaths}
-        textLayers={textLayers}
-        activeLayer={activeLayer}
-        selectedTextId={null}
-        onSelectText={setSelectedTextId}
-        onUpdateText={(id, up) =>
-          setTextLayers(prev =>
-            prev.map(t => (t.id === id ? { ...t, ...up } : t)),
-          )
-        }
-        onAddTextAt={(x, y) => handleAddText({ x, y, focus: true })}
-        onTextDoubleTap={requestTextFocus}
-          onLayerSelect={setActiveLayer}
-        />
-
-        <FloatingTools
-          onUndo={handleUndo}
-          onRedo={handleRedo}
-          canUndo={eraserPaths.length > 0}
-          canRedo={redoPaths.length > 0}
-        />
-      </View>
-    </View>
-  );
-
-  const exportPreview = exportConfig ? (
-    <View style={[styles.exportHidden, { width: exportConfig.width, height: exportConfig.height }]}>
-      <SkiaBackgroundPreview
-        ref={exportPreviewRef}
-        width={exportConfig.width}
-        height={exportConfig.height}
-        subjectUri={activeSubjectUri}
-        originalUri={originalUri}
-        autoAlignSubjectBottom={subjectVariant === 'cutout'}
-        bgImageUri={bgImageUri}
-        mode={mode}
-        showCheckerboard={false}
-        blurStrength={blurStrength}
-        dimBackground={dimBackground}
-        gradientAngle={gradientAngle}
-        gradientIntensity={gradientIntensity}
-        selectedColor={selectedColor}
-        gradientStartColor={gradientStartColor}
-        gradientEndColor={gradientEndColor}
-        bgOpacity={bgOpacity}
-        subjectFilters={subjectFilters}
-        bgFilters={bgFilters}
-        shadow={exportShadow}
-        subjectTransform={exportSubjectTransform}
-        onSubjectTransformChange={() => {}}
-        subjectTool={subjectTool}
-        brushSettings={exportBrushSettings}
-        bgTransform={exportBgTransform}
-        onBgTransformChange={() => {}}
-        bgTool={bgTool}
-        eraserPaths={exportEraserPaths}
-        setEraserPaths={() => {}}
-        setRedoPaths={() => {}}
-        textLayers={exportTextLayers}
-        activeLayer={activeLayer}
-        selectedTextId={selectedTextId}
-        onSelectText={() => {}}
-        onUpdateText={() => {}}
-        onAddTextAt={() => {}}
-        onTextDoubleTap={() => {}}
-        onLayerSelect={() => {}}
-        onAssetsReady={() => setExportReady(true)}
-      />
-    </View>
-  ) : null;
-
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
-      {preview}
-      {exportPreview}
+      <View style={styles.previewContainer}>
+        <View style={styles.previewStage} onLayout={handlePreviewLayout}>
+          <SkiaBackgroundPreview
+            ref={previewRef}
+            width={canvasSize.width}
+            height={canvasSize.height}
+            subjectUri={activeSubjectUri}
+            originalUri={originalUri}
+            autoAlignSubjectBottom={subjectVariant === 'cutout'}
+            bgImageUri={bgImageUri}
+            mode={mode}
+            showCheckerboard={showCheckerboard}
+            blurStrength={blurStrength}
+            dimBackground={dimBackground}
+            gradientAngle={gradientAngle}
+            gradientIntensity={gradientIntensity}
+            selectedColor={selectedColor}
+            gradientStartColor={gradientStartColor}
+            gradientEndColor={gradientEndColor}
+            bgOpacity={bgOpacity}
+            subjectFilters={subjectFilters}
+            bgFilters={bgFilters}
+            shadow={shadow}
+            subjectTransform={subjectTransform}
+            onSubjectTransformChange={setSubjectTransform}
+            subjectTool={subjectTool}
+            brushSettings={brushSettings}
+            bgTransform={bgTransform}
+            onBgTransformChange={setBgTransform}
+            bgTool={bgTool}
+            eraserPaths={eraserPaths}
+            setEraserPaths={setEraserPaths}
+            setRedoPaths={setRedoPaths}
+            textLayers={textLayers}
+            activeLayer={activeLayer}
+            selectedTextId={null}
+            onSelectText={setSelectedTextId}
+            onUpdateText={(id, up) =>
+              setTextLayers((prev) => prev.map((t) => (t.id === id ? { ...t, ...up } : t)))
+            }
+            onAddTextAt={(x, y) => handleAddText({ x, y, focus: true })}
+            onTextDoubleTap={requestTextFocus}
+            onLayerSelect={setActiveLayer}
+          />
+
+          <FloatingTools
+            onUndo={handleUndo}
+            onRedo={handleRedo}
+            canUndo={eraserPaths.length > 0}
+            canRedo={redoPaths.length > 0}
+          />
+        </View>
+      </View>
 
       <EditorSheet
         mode={mode}
@@ -604,12 +437,10 @@ export default function BackgroundEditorScreen({ navigation, route }) {
         textFocusToken={textFocusToken}
         onAddText={handleAddText}
         onUpdateText={(id, up) =>
-          setTextLayers(prev =>
-            prev.map(t => (t.id === id ? { ...t, ...up } : t)),
-          )
+          setTextLayers((prev) => prev.map((t) => (t.id === id ? { ...t, ...up } : t)))
         }
-        onDeleteText={id => {
-          setTextLayers(prev => prev.filter(t => t.id !== id));
+        onDeleteText={(id) => {
+          setTextLayers((prev) => prev.filter((t) => t.id !== id));
           setSelectedTextId(null);
         }}
         onPickImage={handlePickImage}

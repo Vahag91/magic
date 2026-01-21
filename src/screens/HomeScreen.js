@@ -16,17 +16,31 @@ const COLORS = {
   white: colors.white,
 };
 
+// --- OLD VERSION IMAGE SOURCES (use these everywhere) ---
+const HERO_URI =
+  'https://lh3.googleusercontent.com/aida-public/AB6AXuD1kJlJDUyzYZkCJnnj0al2mTpJm3MHxdNcIdMaON1tPG9teEZYUPxnChMLrj6waBY_T3-BsqDUPicPvwS0UOLY_3hjKFCgWXADRgow0JbCz_EdnleeXphVHmuJjNP1QLWA9O7ouLOJ3POzDwg6AChw41E2PZXGw2PLINUu-2TLcA69tEcneEs_5TEfmrhp-gqP2ni3ZWw4zFV_NG97q9aLVIwbwrdQ2HaPUWVdxsePhaDRaSxDiQGE3d4pekuuJe9O6iWyoJj0WszD';
+
+const REMOVE_BG_ICON_URI =
+  'https://lh3.googleusercontent.com/aida-public/AB6AXuAOgA3c3q_iMx1AcbeYGR7JAlfyIgNFHEJzag_8INLURm_PglL7ta6Y1-kpNHXyUx2tXgVxIHd1oCtx8WBIk2Tq1tncZ6Rx97eLfmdS8NHZWmyFxbjSgHS-df_afvYtALXZYhlGLrDTtUBBWE-Lfgj3UR7t10gN5K525d_TfotHy3zf5bmMdg9FNFgDhHhkGC-yJEd_DfIoY-vYTriscYbbxPoPs_lQol5-CAaR_9Rfsob3jJy1mN7jGk--Xf2S8fP0HALNQhxwEbLj';
+
+const REMOVE_BG_PREVIEW_URI =
+  'https://lh3.googleusercontent.com/aida-public/AB6AXuBUvG4SMwEte47QBiNGu11vHo_JdMjLNKLSttqBJHTruSqQR7IBgaWu-uskSzUM6K1Uk9mrYMsp828AFxFceJseU6FTB3ZZu0QpqwxqP9dc7MNsAQ8YW9yLLwz_AH6oQ6GcKtBYslHFCYaY4RIuaOJjvSkUqa57El9A3zkTYlaiVBgZGgC7i4JrWc7DIPZkWNV2ollw64gEXgnxASCgOP_UEXEm_67-sNbALc3CvAav7wD6iqMgMFYfmGmJBqLTR7MdP-DN3pgUDOyZ';
+
+const REMOVE_OBJ_ICON_URI =
+  'https://lh3.googleusercontent.com/aida-public/AB6AXuAk2IUkaK8aBEMpkGuCbwSXnzaSnpcJYVxXQQcVLRgdZuQCcnMy0U8X5sjf9FEx3ZL0aatZfvnrtia6leUTsLZumjl88LINUzBvfEp14UuYrSPSD7IDeWkBZgHvXeIm4zFGiOd_FTBRoXgwhDJDU_oR76CdtS_6RdF721SjGvSPpoTGRoANhV3MtI1lqT5e_FsruZ0m3k65HcCFB7l6gcRk_dfOp4XV_0BzojKT0vnPndaxBv7CjvwEa6GOCiYbC7T03zrv50z92grb';
+
+const REMOVE_OBJ_PREVIEW_URI =
+  'https://lh3.googleusercontent.com/aida-public/AB6AXuAsde4Lr0NaOMZEPDluP0xFq3UGHeFPoysL4LEU1xGxmsVpZjgdVvpAWKu8ruyk4Y_zhuof4p0IbAJ92vEY2iYNtCWT0KCy003CIzwukPdggMAAPhNSuQGusETxWM9SEXUtdz0D0utDFrbzD5oZLattXhqRiHCdhzmC-ndtXwucY4lqx1JXr4bPSKEfnk4_qh2BEIMbftGDfJ0FOvXLrKc3yHibUMCAnmflEo8PNHfJxWtDhJ_l7QcYVokXMWVU9O0EEGPdB_afNpoh';
+
 export default function HomeScreen({ navigation }) {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.contentWrapper}>
-        {/* Header (Redesigned) */}
         <HomeHeader
+          navigation={navigation}
           onPressSettings={() => navigation && navigation.navigate('Settings')}
           showDivider={false}
         />
-
-        <View style={styles.headerDivider} />
 
         {/* Title Section */}
         <View style={styles.titleContainer}>
@@ -34,7 +48,7 @@ export default function HomeScreen({ navigation }) {
           <Text style={styles.appSubtitle}>Professional Photo Cleanup</Text>
         </View>
 
-        {/* Hero Section */}
+        {/* Hero Section (use OLD hero image uri) */}
         <View style={styles.heroContainer}>
           <View style={styles.heroImageWrapper}>
             <View style={styles.glowEffect} />
@@ -42,9 +56,7 @@ export default function HomeScreen({ navigation }) {
             <View style={styles.heroImageShadow}>
               <View style={styles.heroImageClip}>
                 <Image
-                  source={{
-                    uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuD1kJlJDUyzYZkCJnnj0al2mTpJm3MHxdNcIdMaON1tPG9teEZYUPxnChMLrj6waBY_T3-BsqDUPicPvwS0UOLY_3hjKFCgWXADRgow0JbCz_EdnleeXphVHmuJjNP1QLWA9O7ouLOJ3POzDwg6AChw41E2PZXGw2PLINUu-2TLcA69tEcneEs_5TEfmrhp-gqP2ni3ZWw4zFV_NG97q9aLVIwbwrdQ2HaPUWVdxsePhaDRaSxDiQGE3d4pekuuJe9O6iWyoJj0WszD',
-                  }}
+                  source={{ uri: HERO_URI }}
                   style={styles.heroImage}
                   resizeMode="cover"
                 />
@@ -53,21 +65,21 @@ export default function HomeScreen({ navigation }) {
           </View>
         </View>
 
-        {/* Feature List */}
+        {/* Feature List (use OLD icon/preview uris) */}
         <View style={styles.cardsContainer}>
           <FeatureCard
             title={'Remove\nBackground'}
             subtitle="Instantly isolate subjects."
-            iconUri="https://lh3.googleusercontent.com/aida-public/AB6AXuAOgA3c3q_iMx1AcbeYGR7JAlfyIgNFHEJzag_8INLURm_PglL7ta6Y1-kpNHXyUx2tXgVxIHd1oCtx8WBIk2Tq1tncZ6Rx97eLfmdS8NHZWmyFxbjSgHS-df_afvYtALXZYhlGLrDTtUBBWE-Lfgj3UR7t10gN5K525d_TfotHy3zf5bmMdg9FNFgDhHhkGC-yJEd_DfIoY-vYTriscYbbxPoPs_lQol5-CAaR_9Rfsob3jJy1mN7jGk--Xf2S8fP0HALNQhxwEbLj"
-            previewUri="https://lh3.googleusercontent.com/aida-public/AB6AXuBUvG4SMwEte47QBiNGu11vHo_JdMjLNKLSttqBJHTruSqQR7IBgaWu-uskSzUM6K1Uk9mrYMsp828AFxFceJseU6FTB3ZZu0QpqwxqP9dc7MNsAQ8YW9yLLwz_AH6oQ6GcKtBYslHFCYaY4RIuaOJjvSkUqa57El9A3zkTYlaiVBgZGgC7i4JrWc7DIPZkWNV2ollw64gEXgnxASCgOP_UEXEm_67-sNbALc3CvAav7wD6iqMgMFYfmGmJBqLTR7MdP-DN3pgUDOyZ"
+            iconUri={REMOVE_BG_ICON_URI}
+            previewUri={REMOVE_BG_PREVIEW_URI}
             onPress={() => navigation && navigation.navigate('RemoveBackgroundSelect')}
           />
 
           <FeatureCard
             title={'Remove\nObject'}
             subtitle="Erase unwanted elements."
-            iconUri="https://lh3.googleusercontent.com/aida-public/AB6AXuAk2IUkaK8aBEMpkGuCbwSXnzaSnpcJYVxXQQcVLRgdZuQCcnMy0U8X5sjf9FEx3ZL0aatZfvnrtia6leUTsLZumjl88LINUzBvfEp14UuYrSPSD7IDeWkBZgHvXeIm4zFGiOd_FTBRoXgwhDJDU_oR76CdtS_6RdF721SjGvSPpoTGRoANhV3MtI1lqT5e_FsruZ0m3k65HcCFB7l6gcRk_dfOp4XV_0BzojKT0vnPndaxBv7CjvwEa6GOCiYbC7T03zrv50z92grb"
-            previewUri="https://lh3.googleusercontent.com/aida-public/AB6AXuAsde4Lr0NaOMZEPDluP0xFq3UGHeFPoysL4LEU1xGxmsVpZjgdVvpAWKu8ruyk4Y_zhuof4p0IbAJ92vEY2iYNtCWT0KCy003CIzwukPdggMAAPhNSuQGusETxWM9SEXUtdz0D0utDFrbzD5oZLattXhqRiHCdhzmC-ndtXwucY4lqx1JXr4bPSKEfnk4_qh2BEIMbftGDfJ0FOvXLrKc3yHibUMCAnmflEo8PNHfJxWtDhJ_l7QcYVokXMWVU9O0EEGPdB_afNpoh"
+            iconUri={REMOVE_OBJ_ICON_URI}
+            previewUri={REMOVE_OBJ_PREVIEW_URI}
             onPress={() => navigation && navigation.navigate('RemoveObjectSelect')}
           />
         </View>
@@ -87,9 +99,11 @@ function FeatureCard({ title, subtitle, iconUri, previewUri, onPress }) {
           <Text style={styles.cardTitle} numberOfLines={2}>
             {title}
           </Text>
-          <Text style={styles.cardSubtitle} numberOfLines={1}>
-            {subtitle}
-          </Text>
+          {!!subtitle ? (
+            <Text style={styles.cardSubtitle} numberOfLines={1}>
+              {subtitle}
+            </Text>
+          ) : null}
         </View>
       </View>
 
@@ -113,12 +127,6 @@ const styles = StyleSheet.create({
     maxWidth: 500,
     alignSelf: 'center',
     paddingBottom: 18,
-  },
-
-  headerDivider: {
-    height: 1,
-    backgroundColor: 'rgba(226,232,240,0.9)',
-    marginBottom: 18,
   },
 
   // Titles
@@ -198,33 +206,6 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     borderRadius: 40,
-  },
-
-  // CTA
-  ctaButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.primary,
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    borderRadius: 100,
-    width: '100%',
-    gap: 8,
-    ...Platform.select({
-      ios: {
-        shadowColor: COLORS.primary,
-        shadowOpacity: 0.3,
-        shadowRadius: 12,
-        shadowOffset: { width: 0, height: 6 },
-      },
-      android: { elevation: 6 },
-    }),
-  },
-  ctaText: {
-    color: COLORS.white,
-    fontSize: 16,
-    fontWeight: '700',
   },
 
   // Cards
