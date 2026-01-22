@@ -1,5 +1,3 @@
-
-
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
@@ -23,6 +21,7 @@ import { supabase } from '../services/supabaseClient';
 import { getDefaultExportFormat, getHdProcessingEnabled } from '../lib/settings';
 import { isSupabaseConfigured, createSupabaseConfigError } from '../config/supabase';
 import { createLogger } from '../logger';
+import i18n from '../localization/i18n';
 
 import {
   TransparentIcon,
@@ -76,7 +75,6 @@ function formatUriForLog(uri) {
   if (/^data:/i.test(s)) return `data:… (len ${s.length})`;
   return s.length > 180 ? `${s.slice(0, 180)}…` : s;
 }
-
 
 function isHttpUrl(s) {
   return typeof s === 'string' && /^https?:\/\//i.test(s);
@@ -210,7 +208,6 @@ function pickHdUpscaleFactor({ width, height }) {
   const h = Math.round(Number(height) || 0);
   if (!w || !h) return 2;
 
-  // "HD" means: try to reach a ~4K long side, without over-upscaling large inputs.
   const longSide = Math.max(w, h);
   const targetLongSide = 4000;
   const required = targetLongSide / longSide;
@@ -218,7 +215,7 @@ function pickHdUpscaleFactor({ width, height }) {
   if (required <= 1.05) return 1;
   if (required <= 2) return 2;
   if (required <= 4) return 4;
-  return 8; // Edge function clamps to 8
+  return 8;
 }
 
 async function ensureUpscaleInputImage(inputUri, log) {
@@ -324,27 +321,21 @@ function isIOSNotReadySaveError(err) {
   );
 }
 
-/**
- * Ensures the file is on disk (not base64, not http) so CameraRoll can read it.
- */
 async function prepareLocalAssetUriForSave(uri, log) {
   if (!uri) throw new Error('Missing image to save.');
   log?.('prepare:start', { uri: formatUriForLog(uri) });
 
-  // Already a local file
   if (uri.startsWith('file://') || uri.startsWith('/')) {
     const safeUri = uri.startsWith('file://') ? uri : `file://${uri}`;
     log?.('prepare:local', { uri: formatUriForLog(safeUri) });
     return { uri: safeUri, cleanupPath: null };
   }
 
-  // Provider URIs
   if (uri.startsWith('content://') || uri.startsWith('ph://')) {
     log?.('prepare:providerUri', { uri: formatUriForLog(uri) });
     return { uri, cleanupPath: null };
   }
 
-  // Base64 data URI -> write to cache
   if (isDataUri(uri)) {
     const parsed = parseDataUri(uri);
     if (!parsed?.base64) throw new Error('Invalid image data.');
@@ -355,7 +346,6 @@ async function prepareLocalAssetUriForSave(uri, log) {
     return { uri: `file://${path}`, cleanupPath: path };
   }
 
-  // Remote URL -> download to cache
   if (isHttpUrl(uri)) {
     const ext = extensionFromUrl(uri);
     const path = `${RNFS.CachesDirectoryPath}/export-${Date.now()}.${ext}`;
@@ -374,9 +364,6 @@ async function prepareLocalAssetUriForSave(uri, log) {
   throw new Error('Unsupported image URI format.');
 }
 
-/**
- * Permission handler
- */
 async function ensureSavePermission(log) {
   if (Platform.OS === 'ios') {
     const status = await iosRequestAddOnlyGalleryPermission();
@@ -392,13 +379,11 @@ async function ensureSavePermission(log) {
   const api = Number(Platform.Version);
   log?.('permission:android:api', { api });
 
-  // Android 10+ (API 29+) typically OK for add-only
   if (api >= 29) {
     log?.('permission:android:>=29', { granted: true });
     return { granted: true, shouldOpenSettings: false };
   }
 
-  // Android < 29 requires WRITE_EXTERNAL_STORAGE
   const perm = PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE;
   const has = await PermissionsAndroid.check(perm);
   log?.('permission:android:<29:check', { perm, has });
@@ -406,10 +391,10 @@ async function ensureSavePermission(log) {
   if (has) return { granted: true, shouldOpenSettings: false };
 
   const status = await PermissionsAndroid.request(perm, {
-    title: 'Storage Permission',
-    message: 'Magic Studio needs access to save photos to your gallery.',
-    buttonPositive: 'Allow',
-    buttonNegative: 'Deny',
+    title: i18n.t('exportScreen.androidStoragePermissionRationaleTitle'),
+    message: i18n.t('exportScreen.androidStoragePermissionRationaleMessage'),
+    buttonPositive: i18n.t('exportScreen.androidPermissionAllowButton'),
+    buttonNegative: i18n.t('exportScreen.androidPermissionDenyButton'),
   });
   log?.('permission:android:<29:request', { perm, status });
 
@@ -419,42 +404,26 @@ async function ensureSavePermission(log) {
   };
 }
 
-/**
- * iOS readiness: warm up Photos & wait until it responds.
- * IMPORTANT: This prevents first-install “E_UNABLE_TO_SAVE” in many cases.
- */
 async function waitForIOSPhotosReady(log) {
   if (Platform.OS !== 'ios') return true;
 
-  // total wait budget
   const timeoutMs = 4000;
   const start = Date.now();
-
-  // We do a few probes; if albums/photos query succeeds, Photos is “awake”.
-  // Backoff delays: 150, 250, 400, 600, 800...
   const delays = [150, 250, 400, 600, 800, 900];
 
   log?.('ios:photosReady:begin', { timeoutMs });
-
-  // First: a tiny initial delay (let iOS settle permission/UI)
   await sleep(200);
 
   while (Date.now() - start < timeoutMs) {
     try {
-      // Try albums first (usually lighter)
       await CameraRoll.getAlbums({ assetType: 'Photos' });
-      // Extra short delay after first successful probe
       await sleep(150);
-
-      // Optional: also probe getPhotos (some devices behave better after one call)
       await CameraRoll.getPhotos({ first: 1, assetType: 'Photos' });
-
       log?.('ios:photosReady:ok', { ms: Date.now() - start });
       return true;
     } catch (e) {
       const elapsed = Date.now() - start;
       log?.('ios:photosReady:probeFail', { ms: elapsed, message: e?.message || String(e) });
-
       const nextDelay = delays[Math.min(delays.length - 1, Math.floor(elapsed / 500))];
       await sleep(nextDelay);
     }
@@ -464,37 +433,22 @@ async function waitForIOSPhotosReady(log) {
   return false;
 }
 
-/**
- * Save with a SMALL retry, but only after readiness wait.
- * (This keeps behavior “single tap” even in edge cases)
- */
 async function saveToCameraRollAfterReady(preparedUri, log) {
-  // 2 attempts max on iOS, 1 on Android
   const attempts = Platform.OS === 'ios' ? 2 : 1;
   const backoff = [0, 900];
-
   let lastErr = null;
 
   for (let i = 0; i < attempts; i++) {
     try {
-      if (i > 0) {
-        log?.('save:retryDelay', { attempt: i + 1, ms: backoff[i] });
-        await sleep(backoff[i]);
-      }
-
-      const saved = await CameraRoll.saveAsset(preparedUri, { type: 'photo' });
-      return saved;
+      if (i > 0) await sleep(backoff[i]);
+      return await CameraRoll.saveAsset(preparedUri, { type: 'photo' });
     } catch (e) {
       lastErr = e;
-      log?.('save:attemptFailed', { attempt: i + 1, code: e?.code, message: e?.message });
-
-      // Only retry iOS not-ready error; otherwise throw
       if (Platform.OS !== 'ios' || !isIOSNotReadySaveError(e) || i === attempts - 1) {
         throw e;
       }
     }
   }
-
   throw lastErr;
 }
 
@@ -526,60 +480,37 @@ export default function ExportScreen({ navigation, route }) {
   );
 
   useEffect(() => {
-    log('route:params', {
-      resultUri: formatUriForLog(resultUri),
-      resultWidth,
-      resultHeight,
-      previewWidth,
-      previewHeight,
-    });
-  }, [log, previewHeight, previewWidth, resultHeight, resultUri, resultWidth]);
-
-  useEffect(() => {
     let alive = true;
-
     (async () => {
       const saved = await getDefaultExportFormat();
       if (!alive) return;
       if (didUserChangeFormatRef.current) return;
       setFormat(saved);
     })();
-
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, []);
 
   useEffect(() => {
     let alive = true;
-
     (async () => {
       const enabled = await getHdProcessingEnabled({ fallback: isPremium });
       if (!alive) return;
       if (didUserChangeResolutionRef.current) return;
       setResolution(isPremium && enabled ? 'hd' : 'original');
     })();
-
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, [isPremium]);
 
   useEffect(() => {
     let alive = true;
     setInputSize(null);
     if (!resultUri) return () => {};
-
     (async () => {
       const size = await getDecodedImageSize(resultUri);
-      log('input:decodedSize', size);
       if (!alive) return;
       if (size?.width && size?.height) setInputSize(size);
     })();
-
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, [resultUri]);
 
   const effectiveWidth = inputSize?.width || Math.round(Number(resultWidth) || 0);
@@ -599,28 +530,12 @@ export default function ExportScreen({ navigation, route }) {
     inFlightPromise: null,
   });
 
-  useEffect(() => {
-    log('input:effective', { effectiveWidth, effectiveHeight, aspectRatio });
-  }, [aspectRatio, effectiveHeight, effectiveWidth, log]);
-
-  useEffect(() => {
-    log('ui:format', { format });
-  }, [format, log]);
-
-  useEffect(() => {
-    log('ui:resolution', { resolution, isPremium });
-  }, [isPremium, log, resolution]);
-
   const getHdUpscaledUri = useCallback(async () => {
     const factor = pickHdUpscaleFactor({ width: effectiveWidth, height: effectiveHeight });
-
     if (factor <= 1) return resultUri;
 
-    // Always upscale to a high-quality PNG intermediate, then export pipeline converts to PNG/JPG.
-    // This avoids double-JPEG compression and lets Save/Share reuse the same upscale result.
     const cacheKey = `png|${factor}|${String(resultUri || '').slice(0, 120)}`;
     if (upscaleCacheRef.current.cacheKey === cacheKey && upscaleCacheRef.current.upscaledUri) {
-      log('upscale:cacheHit', { uri: formatUriForLog(upscaleCacheRef.current.upscaledUri) });
       return upscaleCacheRef.current.upscaledUri;
     }
 
@@ -636,7 +551,6 @@ export default function ExportScreen({ navigation, route }) {
           upscaleFactor: factor,
           log,
         });
-
         upscaleCacheRef.current.cacheKey = cacheKey;
         upscaleCacheRef.current.upscaledUri = upscaled.uri;
         return upscaled.uri;
@@ -654,219 +568,98 @@ export default function ExportScreen({ navigation, route }) {
   }, [effectiveHeight, effectiveWidth, log, resultUri]);
 
   const onSave = async () => {
-    if (!resultUri) return;
-    if (isSaving) return;
-
+    if (!resultUri || isSaving) return;
     setIsSaving(true);
     const cleanupPaths = [];
 
     try {
-      log('save:config', {
-        format,
-        resolution,
-        effectiveWidth,
-        effectiveHeight,
-        previewWidth,
-        previewHeight,
-        aspectRatio,
-      });
-      log('save:tap', { uri: formatUriForLog(resultUri), platform: Platform.OS, version: Platform.Version });
-
-      // 1) Permission
       const permission = await ensureSavePermission(log);
-      log('save:permission', permission);
-
       if (!permission?.granted) {
         Alert.alert(
-          'Permission Required',
+          i18n.t('exportScreen.permissionRequiredAlertTitle'),
           Platform.OS === 'ios'
-            ? 'Please allow Photos access to save images.'
-            : 'Storage permission is required to save images.',
+            ? i18n.t('exportScreen.iosPhotosPermissionMessage')
+            : i18n.t('exportScreen.androidStoragePermissionMessage'),
           permission?.shouldOpenSettings
             ? [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Open Settings', onPress: () => Linking.openSettings() },
+                { text: i18n.t('exportScreen.alertCancelButton'), style: 'cancel' },
+                { text: i18n.t('exportScreen.alertOpenSettingsButton'), onPress: () => Linking.openSettings() },
               ]
-            : [{ text: 'OK' }],
+            : [{ text: i18n.t('exportScreen.alertOkButton') }],
         );
         return;
       }
 
-      // 2) WAIT until Photos is ready (iOS only) BEFORE saving
       if (Platform.OS === 'ios') {
-        log('save:ios:waitingForPhotosReady', {});
-
         const ready = await waitForIOSPhotosReady(log);
         if (!ready) {
-          // If Photos doesn't become ready within a short window, show message once
           Alert.alert(
-            'Preparing Photos…',
-            'Photos is still initializing. Please try again in a moment.',
+            i18n.t('exportScreen.preparingPhotosAlertTitle'),
+            i18n.t('exportScreen.preparingPhotosAlertMessage')
           );
           return;
         }
       }
 
-      // 3) For HD export, try server upscale first (fallbacks to local export if it fails)
       let inputUri = resultUri;
       if (isHdSelected) {
-        try {
-          inputUri = await getHdUpscaledUri();
-        } catch (e) {
-          log('save:upscaleFailed', { message: e?.message || String(e) });
-          inputUri = resultUri;
-        }
+        try { inputUri = await getHdUpscaledUri(); } catch (e) { inputUri = resultUri; }
       }
       const usedUpscaledInput = isHdSelected && inputUri !== resultUri;
 
-      // 4) Prepare file (download/base64 -> local file)
       const prepared = await prepareLocalAssetUriForSave(inputUri, log);
       if (prepared.cleanupPath) cleanupPaths.push(prepared.cleanupPath);
-      log('save:prepared', { preparedUri: formatUriForLog(prepared.uri), cleanupPath: prepared.cleanupPath || null });
 
-      // 5) Convert to selected export format
       let transcoded;
       try {
-        transcoded = await transcodeImageToCache({
-          uri: prepared.uri,
-          format,
-          quality: 92,
-          backgroundColor: '#FFFFFF',
-          log,
-        });
+        transcoded = await transcodeImageToCache({ uri: prepared.uri, format, log });
       } catch (e) {
-        // HD export can fail on low-memory devices; fall back to original-size export.
         if (!isHdSelected) throw e;
-        log('save:hdFallback', { message: e?.message || String(e) });
         const fallbackSourceUri = usedUpscaledInput ? resultUri : prepared.uri;
         const fallbackPrepared = usedUpscaledInput
           ? await prepareLocalAssetUriForSave(fallbackSourceUri, log)
           : { uri: fallbackSourceUri, cleanupPath: null };
         if (fallbackPrepared.cleanupPath) cleanupPaths.push(fallbackPrepared.cleanupPath);
-
-        transcoded = await transcodeImageToCache({
-          uri: fallbackPrepared.uri,
-          format,
-          quality: 92,
-          backgroundColor: '#FFFFFF',
-          log,
-        });
+        transcoded = await transcodeImageToCache({ uri: fallbackPrepared.uri, format, log });
       }
       if (transcoded.cleanupPath) cleanupPaths.push(transcoded.cleanupPath);
-      log('save:transcoded', { outUri: formatUriForLog(transcoded.uri), mime: transcoded.mime });
 
-      // 3.5) Ensure file exists + size (helps catch timing issues)
-      const path = stripFileScheme(transcoded.uri);
-      const stat = await RNFS.stat(path);
-      log('file:ready', { path, size: stat?.size });
-
-      // 6) Save (after readiness wait)
-      const saved = await saveToCameraRollAfterReady(transcoded.uri, log);
-
-      // Different CameraRoll versions return different shapes
-      const savedUri =
-        typeof saved === 'string'
-          ? saved
-          : saved?.node?.image?.uri
-            ? saved.node.image.uri
-            : saved?.uri
-              ? saved.uri
-              : null;
-
-      log('save:saved', { savedUri });
-
-      Alert.alert('Success', 'Image saved to Photos!', [
-        { text: 'Great', onPress: () => navigation.popToTop() },
-      ]);
+      await saveToCameraRollAfterReady(transcoded.uri, log);
+      Alert.alert(
+        i18n.t('exportScreen.successAlertTitle'),
+        i18n.t('exportScreen.imageSavedMessage'),
+        [{ text: i18n.t('exportScreen.greatButton'), onPress: () => navigation.popToTop() }]
+      );
     } catch (error) {
-      log('save:error', { message: error?.message, code: error?.code, name: error?.name });
-
-      // If we still get the iOS first-time error, don’t confuse user with a hard fail message
       if (Platform.OS === 'ios' && isIOSNotReadySaveError(error)) {
         Alert.alert(
-          'Preparing Photos…',
-          'Photos is still initializing. Please try again in a moment.',
+          i18n.t('exportScreen.preparingPhotosAlertTitle'),
+          i18n.t('exportScreen.preparingPhotosAlertMessage')
         );
       } else {
-        Alert.alert('Error', 'Could not save image.');
+        Alert.alert(i18n.t('exportScreen.errorAlertTitle'), i18n.t('exportScreen.couldNotSaveImageMessage'));
       }
     } finally {
       setIsSaving(false);
-      for (const p of cleanupPaths) {
-        if (!p) continue;
-        RNFS.unlink(stripFileScheme(p)).catch(() => {});
-      }
+      for (const p of cleanupPaths) { if (p) RNFS.unlink(stripFileScheme(p)).catch(() => {}); }
     }
   };
 
   const onShare = async () => {
     if (!resultUri) return;
-
     const cleanupPaths = [];
     try {
-      log('share:config', {
-        format,
-        resolution,
-        effectiveWidth,
-        effectiveHeight,
-        previewWidth,
-        previewHeight,
-        aspectRatio,
-      });
       let inputUri = resultUri;
-      if (isHdSelected) {
-        try {
-          inputUri = await getHdUpscaledUri();
-        } catch (e) {
-          log('share:upscaleFailed', { message: e?.message || String(e) });
-          inputUri = resultUri;
-        }
-      }
-      const usedUpscaledInput = isHdSelected && inputUri !== resultUri;
-
+      if (isHdSelected) { try { inputUri = await getHdUpscaledUri(); } catch { inputUri = resultUri; } }
       const prepared = await prepareLocalAssetUriForSave(inputUri, log);
       if (prepared.cleanupPath) cleanupPaths.push(prepared.cleanupPath);
-
-      let transcoded;
-      try {
-        transcoded = await transcodeImageToCache({
-          uri: prepared.uri,
-          format,
-          quality: 92,
-          backgroundColor: '#FFFFFF',
-          log,
-        });
-      } catch (e) {
-        if (!isHdSelected) throw e;
-        log('share:hdFallback', { message: e?.message || String(e) });
-        const fallbackSourceUri = usedUpscaledInput ? resultUri : prepared.uri;
-        const fallbackPrepared = usedUpscaledInput
-          ? await prepareLocalAssetUriForSave(fallbackSourceUri, log)
-          : { uri: fallbackSourceUri, cleanupPath: null };
-        if (fallbackPrepared.cleanupPath) cleanupPaths.push(fallbackPrepared.cleanupPath);
-
-        transcoded = await transcodeImageToCache({
-          uri: fallbackPrepared.uri,
-          format,
-          quality: 92,
-          backgroundColor: '#FFFFFF',
-          log,
-        });
-      }
+      const transcoded = await transcodeImageToCache({ uri: prepared.uri, format, log });
       if (transcoded.cleanupPath) cleanupPaths.push(transcoded.cleanupPath);
-
-      await Share.open({
-        url: transcoded.uri,
-        type: transcoded.mime,
-        failOnCancel: false,
-      });
+      await Share.open({ url: transcoded.uri, type: transcoded.mime, failOnCancel: false });
     } catch {
-      // ignore
+      /* ignore */
     } finally {
-      for (const p of cleanupPaths) {
-        if (!p) continue;
-        RNFS.unlink(stripFileScheme(p)).catch(() => {});
-      }
+      for (const p of cleanupPaths) { if (p) RNFS.unlink(stripFileScheme(p)).catch(() => {}); }
     }
   };
 
@@ -879,29 +672,20 @@ export default function ExportScreen({ navigation, route }) {
     navigation?.navigate?.('Paywall');
   }, [isPremium, navigation]);
 
+  const hdText = i18n.t('exportScreen.hdLabel'); // EN: "HD" / RU: "HD"
+
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
       <View style={styles.root}>
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
+        <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           {/* Image Preview */}
-          <View
-            style={[
-              styles.previewWrap,
-              { width: previewWidth },
-              previewHeight ? { height: previewHeight } : { aspectRatio },
-            ]}
-          >
+          <View style={[styles.previewWrap, { width: previewWidth }, previewHeight ? { height: previewHeight } : { aspectRatio }]}>
             <TiledCheckerboard />
-
             <View style={styles.previewInner}>
               {resultUri ? (
                 <Image source={{ uri: resultUri }} style={styles.previewImg} resizeMode="contain" />
               ) : (
-                <Text style={{ color: SUB, fontWeight: '700' }}>No exported image</Text>
+                <Text style={{ color: SUB, fontWeight: '700' }}>{i18n.t('exportScreen.noExportedImage')}</Text>
               )}
             </View>
 
@@ -910,105 +694,85 @@ export default function ExportScreen({ navigation, route }) {
               <Text style={styles.infoPillText}>
                 {format.toUpperCase()} •{' '}
                 {isHdSelected
-                  ? `HD${hdUpscaleFactor > 1 ? ` ×${hdUpscaleFactor}` : ''}`
+                  ? `${hdText}${hdUpscaleFactor > 1 ? ` ×${hdUpscaleFactor}` : ''}`
                   : `${effectiveWidth}x${effectiveHeight}`}
               </Text>
             </View>
           </View>
 
           {/* Format Selection */}
-          <Text style={styles.sectionLabel}>FORMAT</Text>
+          <Text style={styles.sectionLabel}>{i18n.t('exportScreen.formatSectionTitle')}</Text>
           <View style={styles.grid2}>
             <FormatCard
               active={format === 'png'}
               title="PNG"
-              subtitle="Transparent"
+              subtitle={i18n.t('exportScreen.formatPngSubtitle')}
               iconName="png"
-              onPress={() => {
-                didUserChangeFormatRef.current = true;
-                setFormat('png');
-              }}
+              onPress={() => { didUserChangeFormatRef.current = true; setFormat('png'); }}
             />
-
             <FormatCard
               active={format === 'jpg'}
-              disabled={false}
               title="JPG"
-              subtitle="Smaller • No transparency"
+              subtitle={i18n.t('exportScreen.formatJpgSubtitle')}
               iconName="jpg"
-              onPress={() => {
-                didUserChangeFormatRef.current = true;
-                setFormat('jpg');
-              }}
+              onPress={() => { didUserChangeFormatRef.current = true; setFormat('jpg'); }}
             />
           </View>
 
           {/* Resolution Selection */}
-          <Text style={[styles.sectionLabel, { marginTop: 22 }]}>RESOLUTION</Text>
+          <Text style={[styles.sectionLabel, { marginTop: 22 }]}>{i18n.t('exportScreen.resolutionSectionTitle')}</Text>
+
           <ResolutionCard
             active={resolution === 'original'}
-            title="Original"
+            title={i18n.t('exportScreen.originalResolutionTitle')}
             subtitle={`${effectiveWidth} x ${effectiveHeight} px`}
-            onPress={() => {
-              didUserChangeResolutionRef.current = true;
-              setResolution('original');
-            }}
+            onPress={() => { didUserChangeResolutionRef.current = true; setResolution('original'); }}
           />
+
           <ResolutionCardPro
             active={resolution === 'hd'}
-            title="HD Upscale"
-            subtitle="AI Upscale • Better quality"
+            title={i18n.t('exportScreen.hdUpscaleTitle')}
+            subtitle={i18n.t('exportScreen.hdUpscaleSubtitle')}
             onPress={handleProFeature}
           />
 
-          {/* Pro Upgrade Card */}
-          {!isPremium ? (
+          {!isPremium && (
             <View style={styles.upgradeCard}>
               <View style={styles.upgradeGlow} />
               <View style={styles.upgradeRow}>
                 <View style={styles.upgradeCopy}>
-                  <Text style={styles.upgradeTitle}>Upgrade for HD export</Text>
-                  <Text style={styles.upgradeText}>Get AI-upscaled exports and remove watermarks.</Text>
+                  <Text style={styles.upgradeTitle}>{i18n.t('exportScreen.upgradeCardTitle')}</Text>
+                  <Text style={styles.upgradeText}>{i18n.t('exportScreen.upgradeCardText')}</Text>
                 </View>
-                <Pressable
-                  onPress={handleProFeature}
-                  style={({ pressed }) => [styles.tryProBtn, pressed && styles.pressed]}
-                >
-                  <Text style={styles.tryProText}>Try Pro</Text>
+                <Pressable onPress={handleProFeature} style={({ pressed }) => [styles.tryProBtn, pressed && styles.pressed]}>
+                  <Text style={styles.tryProText}>{i18n.t('exportScreen.tryProButton')}</Text>
                 </Pressable>
               </View>
             </View>
-          ) : null}
+          )}
 
           {/* Actions */}
           <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) + 18 }]}>
             <Pressable
               onPress={onSave}
               disabled={isSaving}
-              style={({ pressed }) => [
-                styles.primaryBtn,
-                pressed && styles.primaryPressed,
-                isSaving && { opacity: 0.7 },
-              ]}
+              style={({ pressed }) => [styles.primaryBtn, pressed && styles.primaryPressed, isSaving && { opacity: 0.7 }]}
             >
               {isSaving ? (
                 <>
                   <ActivityIndicator color="#fff" />
-                  <Text style={[styles.primaryBtnText, { marginLeft: 8 }]}>Preparing…</Text>
+                  <Text style={[styles.primaryBtnText, { marginLeft: 8 }]}>{i18n.t('exportScreen.preparingButton')}</Text>
                 </>
               ) : (
                 <>
-                  <Text style={styles.primaryBtnText}>Save to Photos</Text>
+                  <Text style={styles.primaryBtnText}>{i18n.t('exportScreen.saveToPhotosButton')}</Text>
                   <SaveIcon size={22} color="#fff" />
                 </>
               )}
             </Pressable>
 
-            <Pressable
-              onPress={onShare}
-              style={({ pressed }) => [styles.secondaryBtn, pressed && styles.pressed]}
-            >
-              <Text style={styles.secondaryBtnText}>Share</Text>
+            <Pressable onPress={onShare} style={({ pressed }) => [styles.secondaryBtn, pressed && styles.pressed]}>
+              <Text style={styles.secondaryBtnText}>{i18n.t('exportScreen.shareButton')}</Text>
               <ShareIcon size={20} color={PRIMARY} />
             </Pressable>
           </View>
@@ -1022,7 +786,6 @@ export default function ExportScreen({ navigation, route }) {
 
 function FormatCard({ active, disabled, title, subtitle, iconName, onPress }) {
   const IconComponent = iconName === 'png' ? TransparentIcon : BackgroundIcon;
-
   return (
     <Pressable
       onPress={onPress}
@@ -1034,16 +797,14 @@ function FormatCard({ active, disabled, title, subtitle, iconName, onPress }) {
         pressed && !disabled && styles.pressed,
       ]}
     >
-      {active ? (
+      {active && (
         <View style={styles.checkBadge}>
           <CheckIcon size={16} color="#FFFFFF" />
         </View>
-      ) : null}
-
+      )}
       <View style={[styles.formatIcon, active ? styles.formatIconActive : null]}>
         <IconComponent size={22} color={active ? PRIMARY : '#9CA3AF'} />
       </View>
-
       <Text style={styles.formatTitle}>{title}</Text>
       <Text style={styles.formatSub}>{subtitle}</Text>
     </Pressable>
@@ -1052,10 +813,7 @@ function FormatCard({ active, disabled, title, subtitle, iconName, onPress }) {
 
 function ResolutionCard({ active, title, subtitle, onPress }) {
   return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [styles.resCard, active && styles.resCardActive, pressed && styles.pressed]}
-    >
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.resCard, active && styles.resCardActive, pressed && styles.pressed]}>
       <View style={styles.resLeft}>
         <Radio active={active} />
         <View>
@@ -1069,14 +827,7 @@ function ResolutionCard({ active, title, subtitle, onPress }) {
 
 function ResolutionCardPro({ active, title, subtitle, onPress }) {
   return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.resCardPro,
-        active && styles.resCardProActive,
-        pressed && styles.pressed,
-      ]}
-    >
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.resCardPro, active && styles.resCardProActive, pressed && styles.pressed]}>
       <View style={styles.resProStripe} />
       <View style={[styles.resLeft, { paddingLeft: 8 }]}>
         <Radio active={active} strong />
@@ -1084,7 +835,7 @@ function ResolutionCardPro({ active, title, subtitle, onPress }) {
           <View style={styles.hdRow}>
             <Text style={styles.resTitle}>{title}</Text>
             <View style={styles.proPill}>
-              <Text style={styles.proPillText}>PRO</Text>
+              <Text style={styles.proPillText}>{i18n.t('exportScreen.proBadge')}</Text>
             </View>
           </View>
           <Text style={styles.resSub}>{subtitle}</Text>
@@ -1105,130 +856,44 @@ function Radio({ active, strong }) {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: BG },
   root: { flex: 1, backgroundColor: BG },
-
-  header: {
-    paddingTop: 8,
-    paddingHorizontal: 16,
-    paddingBottom: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: 'rgba(255,255,255,0.95)',
-  },
-  iconBtn: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 18, fontWeight: '800', color: TEXT },
-  headerSpacer: { width: 42 },
-
   pressed: { opacity: 0.92, transform: [{ scale: 0.99 }] },
   primaryPressed: { opacity: 0.95, transform: [{ scale: 0.985 }] },
-
   scroll: { flex: 1 },
   scrollContent: { paddingHorizontal: 16, paddingBottom: 16 },
-
   previewWrap: {
-    alignSelf: 'center',
-    borderRadius: 22,
-    overflow: 'hidden',
-    marginTop: 10,
-    marginBottom: 18,
-    borderWidth: 1,
-    borderColor: '#F3F4F6',
-    backgroundColor: '#F3F4F6',
-    ...Platform.select({
-      ios: { shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 14, shadowOffset: { width: 0, height: 8 } },
-      android: { elevation: 3 },
-    }),
+    alignSelf: 'center', borderRadius: 22, overflow: 'hidden', marginTop: 10, marginBottom: 18,
+    borderWidth: 1, borderColor: '#F3F4F6', backgroundColor: '#F3F4F6',
+    ...Platform.select({ ios: { shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 14, shadowOffset: { width: 0, height: 8 } }, android: { elevation: 3 } }),
   },
   previewInner: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   previewImg: { width: '100%', height: '100%' },
-
   tiledContainer: { ...StyleSheet.absoluteFillObject, overflow: 'hidden', backgroundColor: '#FFF' },
   tiledImage: { width: '100%', height: '100%', opacity: 0.15 },
-
-  infoPill: {
-    position: 'absolute',
-    left: 14,
-    bottom: 14,
-    backgroundColor: 'rgba(0,0,0,0.60)',
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 999,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
+  infoPill: { position: 'absolute', left: 14, bottom: 14, backgroundColor: 'rgba(0,0,0,0.60)', paddingHorizontal: 10, paddingVertical: 7, borderRadius: 999, flexDirection: 'row', alignItems: 'center', gap: 6 },
   infoPillText: { color: '#fff', fontSize: 12, fontWeight: '700' },
-
   sectionLabel: { fontSize: 12, fontWeight: '900', letterSpacing: 1, color: '#6B7280', marginBottom: 10 },
   grid2: { flexDirection: 'row', gap: 12 },
-
-  formatCard: {
-    flex: 1,
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: BORDER,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 116,
-  },
+  formatCard: { flex: 1, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: BORDER, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', minHeight: 116 },
   formatCardActive: { borderWidth: 2, borderColor: PRIMARY, backgroundColor: '#EFF6FF' },
   formatCardDisabled: { opacity: 0.55 },
-
-  checkBadge: {
-    position: 'absolute',
-    right: 10,
-    top: 10,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: PRIMARY,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  formatIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: '#F3F4F6',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-  },
+  checkBadge: { position: 'absolute', right: 10, top: 10, width: 24, height: 24, borderRadius: 12, backgroundColor: PRIMARY, alignItems: 'center', justifyContent: 'center' },
+  formatIcon: { width: 44, height: 44, borderRadius: 12, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
   formatIconActive: { backgroundColor: '#FFFFFF' },
   formatTitle: { fontSize: 16, fontWeight: '900', color: TEXT },
   formatSub: { fontSize: 12, fontWeight: '700', color: SUB, marginTop: 4 },
-
   resCard: { borderRadius: 16, padding: 14, borderWidth: 1, borderColor: BORDER, backgroundColor: '#fff', marginBottom: 10 },
   resCardActive: { borderColor: PRIMARY, borderWidth: 1.5 },
-
-  resCardPro: {
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 2,
-    borderColor: PRIMARY,
-    backgroundColor: 'rgba(37,99,235,0.06)',
-    marginBottom: 14,
-    overflow: 'hidden',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
+  resCardPro: { borderRadius: 16, padding: 14, borderWidth: 2, borderColor: PRIMARY, backgroundColor: 'rgba(37,99,235,0.06)', marginBottom: 14, overflow: 'hidden', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   resCardProActive: { backgroundColor: 'rgba(37,99,235,0.08)' },
   resProStripe: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, backgroundColor: PRIMARY },
-
   resLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   resTitle: { fontSize: 16, fontWeight: '900', color: TEXT },
   resSub: { fontSize: 12, fontWeight: '700', color: SUB, marginTop: 3 },
-
   radioOff: { width: 20, height: 20, borderRadius: 999, borderWidth: 1.5, borderColor: '#D1D5DB', backgroundColor: '#fff' },
   radioOn: { width: 20, height: 20, borderRadius: 999, borderWidth: 5, borderColor: PRIMARY, backgroundColor: '#fff' },
-
   hdRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   proPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, backgroundColor: '#F59E0B' },
   proPillText: { color: '#fff', fontSize: 10, fontWeight: '900', letterSpacing: 0.7 },
-
   upgradeCard: { borderRadius: 16, padding: 16, backgroundColor: '#111827', overflow: 'hidden' },
   upgradeGlow: { position: 'absolute', right: -10, top: -10, width: 120, height: 120, borderRadius: 999, backgroundColor: PRIMARY, opacity: 0.18 },
   upgradeCopy: { flex: 1, paddingRight: 14 },
@@ -1237,11 +902,9 @@ const styles = StyleSheet.create({
   upgradeText: { color: '#D1D5DB', fontWeight: '600', fontSize: 12, lineHeight: 16 },
   tryProBtn: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.10)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
   tryProText: { color: '#fff', fontWeight: '800', fontSize: 12 },
-
   bottomBar: { marginTop: 18, paddingHorizontal: 2, paddingTop: 14 },
   primaryBtn: { height: 56, borderRadius: 999, backgroundColor: PRIMARY, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 10 },
   primaryBtnText: { color: '#fff', fontSize: 17, fontWeight: '900' },
-
   secondaryBtn: { height: 48, borderRadius: 999, marginTop: 10, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: 'transparent' },
   secondaryBtnText: { color: PRIMARY, fontSize: 17, fontWeight: '900' },
 });

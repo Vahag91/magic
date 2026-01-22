@@ -22,11 +22,11 @@ function buildPrompt({ prompt, width, height }) {
   const w = Math.round(Number(width) || 0);
   const h = Math.round(Number(height) || 0);
 
-  const sizeHint = w && h ? `Target size: ${w}x${h}px.` : 'Use a 4:5 portrait aspect ratio.';
+  const sizeHint = w && h ? `Target size: ${w}x${h}px.` : i18n.t('geminiBackgroundGenerationScreen.aspectRatioHint');
   return [
-    'Generate a high-quality background image only.',
-    'Do not include people, faces, text, logos, or watermarks.',
-    'Keep the scene coherent and realistic unless the prompt requests a stylized look.',
+    i18n.t('geminiBackgroundGenerationScreen.generateImageOnly'),
+    i18n.t('geminiBackgroundGenerationScreen.noPeopleOrText'),
+    i18n.t('geminiBackgroundGenerationScreen.coherentRealisticLook'),
     sizeHint,
     `Prompt: ${trimmed}`,
   ].join(' ');

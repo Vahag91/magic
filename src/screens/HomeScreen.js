@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../styles';
 import { ChevronRightIcon } from '../components/icons';
 import HomeHeader from '../components/HomeHeader';
+import i18n from '../localization/i18n';
 
 const COLORS = {
   primary: colors.brandBlue,
@@ -44,8 +45,8 @@ export default function HomeScreen({ navigation }) {
 
         {/* Title Section */}
         <View style={styles.titleContainer}>
-          <Text style={styles.appTitle}>Magic Studio</Text>
-          <Text style={styles.appSubtitle}>Professional Photo Cleanup</Text>
+          <Text style={styles.appTitle}>{i18n.t('homeScreen.appTitle')}</Text>
+          <Text style={styles.appSubtitle}>{i18n.t('homeScreen.appSubtitle')}</Text>
         </View>
 
         {/* Hero Section (use OLD hero image uri) */}
@@ -68,16 +69,16 @@ export default function HomeScreen({ navigation }) {
         {/* Feature List (use OLD icon/preview uris) */}
         <View style={styles.cardsContainer}>
           <FeatureCard
-            title={'Remove\nBackground'}
-            subtitle="Instantly isolate subjects."
+            title={i18n.t('homeScreen.removeBackgroundTitle')}
+            subtitle={i18n.t('homeScreen.removeBackgroundSubtitle')}
             iconUri={REMOVE_BG_ICON_URI}
             previewUri={REMOVE_BG_PREVIEW_URI}
             onPress={() => navigation && navigation.navigate('RemoveBackgroundSelect')}
           />
 
           <FeatureCard
-            title={'Remove\nObject'}
-            subtitle="Erase unwanted elements."
+            title={i18n.t('homeScreen.removeObjectTitle')}
+            subtitle={i18n.t('homeScreen.removeObjectSubtitle')}
             iconUri={REMOVE_OBJ_ICON_URI}
             previewUri={REMOVE_OBJ_PREVIEW_URI}
             onPress={() => navigation && navigation.navigate('RemoveObjectSelect')}

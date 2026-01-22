@@ -22,6 +22,7 @@ import { common } from '../styles';
 import { useError } from '../providers/ErrorProvider';
 import { createAppError } from '../lib/errors';
 import { createLogger } from '../logger';
+import i18n from '../localization/i18n';
 
 // If you have these icons, use them. Otherwise, the code falls back to text.
 import { ProcessingMagicIcon } from '../components/icons';
@@ -415,10 +416,10 @@ export default function RemoveBackgroundProcessingScreen({ navigation, route }) 
   // Progress + status
   const steps = React.useMemo(
     () => [
-      { key: 'detect', title: 'Detecting subject' },
-      { key: 'prep', title: 'Preparing' },
-      { key: 'remove', title: 'Removing background' },
-      { key: 'finish', title: 'Finalizing' },
+      { key: 'detect', title: i18n.t('removeBackgroundProcessingScreen.stepDetect') },
+      { key: 'prep', title: i18n.t('removeBackgroundProcessingScreen.stepPrepare') },
+      { key: 'remove', title: i18n.t('removeBackgroundProcessingScreen.stepRemove') },
+      { key: 'finish', title: i18n.t('removeBackgroundProcessingScreen.stepFinish') },
     ],
     []
   );
@@ -557,11 +558,11 @@ export default function RemoveBackgroundProcessingScreen({ navigation, route }) 
         configErrorShownRef.current = true;
         setIsWorking(false);
         showError({
-          title: 'Setup required',
+          title: i18n.t('removeBackgroundProcessingScreen.setupRequiredTitle'),
           message:
-            'Supabase is not configured. Set SUPABASE_BASE and SUPABASE_ANON_KEY in .env, then restart Metro.',
+            i18n.t('removeBackgroundProcessingScreen.supabaseConfigMessage'),
           retry: () => navigation.goBack(),
-          retryLabel: 'Go back',
+          retryLabel: i18n.t('removeBackgroundProcessingScreen.goBackButton'),
         });
       }
       return;
@@ -579,7 +580,7 @@ export default function RemoveBackgroundProcessingScreen({ navigation, route }) 
     processedRunIdRef.current = runId;
 
     if (!imageUri && !base64) {
-      Alert.alert('No image', 'Please select an image first.');
+      Alert.alert(i18n.t('removeBackgroundProcessingScreen.noImage'), i18n.t('removeBackgroundProcessingScreen.selectImageFirst'));
       navigation.goBack();
       return;
     }
@@ -789,8 +790,8 @@ export default function RemoveBackgroundProcessingScreen({ navigation, route }) 
       navigation.goBack();
       return;
     }
-    Alert.alert('Cancel processing?', 'Your cutout won’t be generated.', [
-      { text: 'Keep waiting', style: 'cancel' },
+    Alert.alert(i18n.t('removeBackgroundProcessingScreen.cancelProcessingConfirmationTitle'), i18n.t('removeBackgroundProcessingScreen.cancelProcessingConfirmationMessage'), [
+      { text: i18n.t('exportScreen.alertKeepWaitingButton'), style: 'cancel' },
       {
         text: 'Cancel',
         style: 'destructive',
@@ -804,8 +805,8 @@ export default function RemoveBackgroundProcessingScreen({ navigation, route }) 
 
   const onHelp = React.useCallback(() => {
     Alert.alert(
-      'Background Removal',
-      'We process your photo on the server and return a transparent PNG cutout. This usually takes a few seconds.',
+      i18n.t('removeBackgroundProcessingScreen.backgroundRemovalHelpTitle'),
+      i18n.t('removeBackgroundProcessingScreen.backgroundRemovalHelpMessage'),
     );
   }, []);
 
@@ -887,13 +888,13 @@ export default function RemoveBackgroundProcessingScreen({ navigation, route }) 
             </View>
 
             <View style={{ flex: 1 }}>
-              <Text style={styles.hTitle}>Removing Background</Text>
+              <Text style={styles.hTitle}>{i18n.t('removeBackgroundProcessingScreen.heroTitle')}</Text>
             </View>
           </View>
 
           <View style={styles.heroRight}>
             <Text style={styles.percentText}>{percent}%</Text>
-            <Text style={styles.percentHint}>done</Text>
+            <Text style={styles.percentHint}>{i18n.t('removeBackgroundProcessingScreen.percentHint')}</Text>
           </View>
         </View>
 
@@ -943,16 +944,16 @@ export default function RemoveBackgroundProcessingScreen({ navigation, route }) 
           {/* small “processing” chip */}
           <View style={styles.processingChip}>
             <View style={styles.processingDot} />
-            <Text style={styles.processingText}>{isWorking ? 'Processing' : 'Finishing'}</Text>
+            <Text style={styles.processingText}>{isWorking ? i18n.t('removeBackgroundProcessingScreen.processingStatusText') : i18n.t('removeBackgroundProcessingScreen.finishingStatusText')}</Text>
           </View>
         </View>
 
         {/* Steps (more user-friendly than one line status) */}
         <View style={styles.stepsRow}>
-          <StepPill index={0} label="Detect" />
-          <StepPill index={1} label="Prepare" />
-          <StepPill index={2} label="Remove" />
-          <StepPill index={3} label="Finish" />
+          <StepPill index={0} label={i18n.t('removeBackgroundProcessingScreen.stepDetect')} />
+          <StepPill index={1} label={i18n.t('removeBackgroundProcessingScreen.stepPrepare')} />
+          <StepPill index={2} label={i18n.t('removeBackgroundProcessingScreen.stepRemove')} />
+          <StepPill index={3} label={i18n.t('removeBackgroundProcessingScreen.stepFinish')} />
         </View>
 
         {/* Progress */}
@@ -965,11 +966,11 @@ export default function RemoveBackgroundProcessingScreen({ navigation, route }) 
         {/* Actions */}
         <View style={styles.actions}>
           <TouchableOpacity onPress={onCancel} style={styles.cancelBtn} activeOpacity={0.9}>
-            <Text style={styles.cancelText}>Cancel</Text>
+            <Text style={styles.cancelText}>{i18n.t('removeBackgroundProcessingScreen.cancelButton')}</Text>
           </TouchableOpacity>
 
           <Text style={styles.footerNote}>
-            Tip: For best results use images with clear subject & good lighting.
+            {i18n.t('removeBackgroundProcessingScreen.footerNote')}
           </Text>
         </View>
       </View>

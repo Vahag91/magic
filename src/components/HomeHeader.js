@@ -1,5 +1,11 @@
 import * as React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Platform,
+} from 'react-native';
 
 // Keep import (already in project). Not used now.
 import LinearGradient from 'react-native-linear-gradient';
@@ -7,6 +13,7 @@ import LinearGradient from 'react-native-linear-gradient';
 import { colors, hitSlop10 } from '../styles';
 import { GetPremiumIcon, SettingsIcon } from './icons';
 import { useSubscription } from '../providers/SubscriptionProvider';
+import i18n from '../localization/i18n';
 
 const COLORS = {
   primary: colors.brandBlue,
@@ -40,8 +47,13 @@ export default function HomeHeader({
         {/* Left */}
         <View style={styles.left}>
           {isPremium ? (
-            <View style={styles.premiumChip} accessibilityLabel="Premium active">
-              <Text style={styles.premiumChipText}>Premium</Text>
+            <View
+              style={styles.premiumChip}
+              accessibilityLabel={i18n.t('homeHeader.premiumActiveLabel')}
+            >
+              <Text style={styles.premiumChipText}>
+                {i18n.t('homeHeader.premiumText')}
+              </Text>
             </View>
           ) : (
             <GetPremiumButton onPress={handleGetPremium} />
@@ -56,7 +68,7 @@ export default function HomeHeader({
             hitSlop={hitSlop10}
             activeOpacity={0.85}
             accessibilityRole={canPressSettings ? 'button' : undefined}
-            accessibilityLabel="Settings"
+            accessibilityLabel={i18n.t('homeHeader.settingsAccessibilityLabel')}
             style={[styles.iconBtn, !canPressSettings && styles.disabled]}
           >
             <SettingsIcon size={23} color={COLORS.text} />
@@ -80,13 +92,17 @@ function GetPremiumButton({ onPress }) {
       onPressOut={() => setPressed(false)}
       style={[
         styles.premiumBtn,
-        { backgroundColor: pressed ? COLORS.premiumBgPressed : COLORS.premiumBg },
+        {
+          backgroundColor: pressed ? COLORS.premiumBgPressed : COLORS.premiumBg,
+        },
       ]}
       accessibilityRole="button"
-      accessibilityLabel="Get Premium"
+      accessibilityLabel={i18n.t('homeHeader.getPremiumAccessibilityLabel')}
     >
       <GetPremiumIcon color={COLORS.white} size={16} />
-      <Text style={styles.premiumBtnText}>Premium</Text>
+      <Text style={styles.premiumBtnText}>
+        {i18n.t('homeHeader.premiumText')}
+      </Text>
     </TouchableOpacity>
   );
 }

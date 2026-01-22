@@ -29,6 +29,7 @@ import {
 
 import { useError } from '../providers/ErrorProvider';
 import { createLogger } from '../logger';
+import i18n from '../localization/i18n';
 
 const PRIMARY = colors.blue500;
 const TEXT = colors.text;
@@ -82,10 +83,10 @@ export default function RemoveBackgroundSelectScreen({ navigation, route }) {
   const isObjectRemoval =
     route?.name === 'RemoveObjectSelect' || route?.params?.flow === 'objectRemoval';
 
-  const heroTitle = 'Select a Photo';
+  const heroTitle = i18n.t('removeBackgroundSelectScreen.heroTitle');
   const heroSubtitle = isObjectRemoval
-    ? 'Choose an image and paint over what you want removed.'
-    : 'Choose an image to magically remove its background instantly.';
+    ? i18n.t('removeBackgroundSelectScreen.objectRemovalHeroSubtitle')
+    : i18n.t('removeBackgroundSelectScreen.backgroundRemovalHeroSubtitle');
 
   const HeroIcon = isObjectRemoval ? ImageIcon : PersonRemoveIcon;
 
@@ -129,9 +130,9 @@ export default function RemoveBackgroundSelectScreen({ navigation, route }) {
 
         if (result.errorCode) {
           if (result.errorCode === 'permission') {
-            Alert.alert('Permission required', 'Please enable permission in Settings.', [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Open Settings', onPress: () => Linking.openSettings() },
+            Alert.alert(i18n.t('removeBackgroundSelectScreen.permissionRequired'), i18n.t('removeBackgroundSelectScreen.enablePermissionInSettings'), [
+              { text: i18n.t('exportScreen.alertCancelButton'), style: 'cancel' },
+              { text: i18n.t('exportScreen.alertOpenSettingsButton'), onPress: () => Linking.openSettings() },
             ]);
             return;
           }
@@ -145,7 +146,7 @@ export default function RemoveBackgroundSelectScreen({ navigation, route }) {
         const base64 = asset?.base64 || null;
 
         if (!rawUri && !base64) {
-          Alert.alert('No image selected', 'Please try again.');
+          Alert.alert(i18n.t('removeBackgroundSelectScreen.noImageSelected'), i18n.t('removeBackgroundSelectScreen.tryAgain'));
           return;
         }
 
@@ -194,9 +195,9 @@ export default function RemoveBackgroundSelectScreen({ navigation, route }) {
           if (status !== PermissionsAndroid.RESULTS.GRANTED) {
             release();
             if (status === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) {
-              Alert.alert('Permission Required', 'Allow access to photos in settings.', [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Settings', onPress: () => Linking.openSettings() },
+              Alert.alert(i18n.t('exportScreen.permissionRequiredAlertTitle'), i18n.t('removeBackgroundSelectScreen.allowAccessToPhotos'), [
+                { text: i18n.t('exportScreen.alertCancelButton'), style: 'cancel' },
+                { text: i18n.t('exportScreen.alertOpenSettingsButton'), onPress: () => Linking.openSettings() },
               ]);
             }
             return;
@@ -271,8 +272,8 @@ export default function RemoveBackgroundSelectScreen({ navigation, route }) {
 
           <View style={styles.options}>
             <OptionRow
-              title="Photo Library"
-              subtitle="Select from your gallery"
+              title={i18n.t('removeBackgroundSelectScreen.photoLibraryTitle')}
+              subtitle={i18n.t('removeBackgroundSelectScreen.photoLibrarySubtitle')}
               Icon={PhotoLibraryIcon}
               iconBg="#DBEAFE"
               iconColor={PRIMARY}
@@ -280,8 +281,8 @@ export default function RemoveBackgroundSelectScreen({ navigation, route }) {
             />
 
             <OptionRow
-              title="Files"
-              subtitle="Import from iCloud or Drive"
+              title={i18n.t('removeBackgroundSelectScreen.filesTitle')}
+              subtitle={i18n.t('removeBackgroundSelectScreen.filesSubtitle')}
               Icon={FolderOpenIcon}
               iconBg="#E0E7FF"
               iconColor="#4F46E5"
@@ -295,17 +296,15 @@ export default function RemoveBackgroundSelectScreen({ navigation, route }) {
                 <LightbulbIcon size={18} color={PRIMARY} />
               </View>
               <View style={styles.tipTextContainer}>
-                <Text style={styles.tipTitle}>Pro Tip</Text>
+                <Text style={styles.tipTitle}>{i18n.t('removeBackgroundSelectScreen.proTipTitle')}</Text>
                 <Text style={styles.tipText}>
                   {isObjectRemoval ? (
                     <>
-                      Paint a <Text style={styles.tipAccent}>slightly larger area</Text> than the object for smoother
-                      removal.
+                      {i18n.t('removeBackgroundSelectScreen.proTipObjectRemovalText')}
                     </>
                   ) : (
                     <>
-                      Best results come from photos with a <Text style={styles.tipAccent}>clear subject</Text> and{' '}
-                      <Text style={styles.tipAccent}>good lighting</Text>.
+                      {i18n.t('removeBackgroundSelectScreen.proTipBackgroundRemovalText')}
                     </>
                   )}
                 </Text>
@@ -318,7 +317,7 @@ export default function RemoveBackgroundSelectScreen({ navigation, route }) {
           <View style={styles.busyOverlay} pointerEvents="auto">
             <View style={styles.busyCard}>
               <ActivityIndicator />
-              <Text style={styles.busyText}>Preparing…</Text>
+              <Text style={styles.busyText}>{i18n.t('removeBackgroundSelectScreen.preparingText')}</Text>
             </View>
           </View>
         ) : null}

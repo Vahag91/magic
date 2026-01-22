@@ -16,7 +16,7 @@ import SimpleHeader from '../components/SimpleHeader';
 import AppErrorBoundary from '../components/AppErrorBoundary';
 import { colors } from '../styles';
 import { shouldShowOnboarding } from '../lib/onboarding';
-
+import i18n from '../localization/i18n';
 const Stack = createNativeStackNavigator();
 
 function withScreenErrorBoundary(ScreenComponent) {
@@ -100,26 +100,26 @@ export default function AppNavigator() {
       <Stack.Screen
         name="RemoveBackgroundSelect"
         component={RemoveBackgroundSelectScreenWithBoundary}
-        options={{ title: 'Remove Background' }}
+        options={{ title: i18n.t('nav.removeBackground') }}
       />
       <Stack.Screen
         name="RemoveBackgroundProcessing"
         component={RemoveBackgroundProcessingScreenWithBoundary}
-        options={{ title: 'Removing Background' }}
+       options={{ title: i18n.t('nav.removingBackground') }}
       />
       <Stack.Screen name="Crop" component={CropScreenWithBoundary} options={{ headerShown: false }} />
-      <Stack.Screen name="BackgroundEditor" component={BackgroundEditorScreenWithBoundary} options={{ title: 'Skia Editor' }} />
+      <Stack.Screen name="BackgroundEditor" component={BackgroundEditorScreenWithBoundary} options={{ title: i18n.t('nav.backgroundEditor') }} />
       {/* Removed Refine and Adjust routes */}
-      <Stack.Screen name="Export" component={ExportScreenWithBoundary} options={{ title: 'Export' }} />
+      <Stack.Screen name="Export" component={ExportScreenWithBoundary}  options={{ title: i18n.t('nav.export') }} />
       <Stack.Screen
         name="RemoveObjectSelect"
         component={RemoveBackgroundSelectScreenWithBoundary}
         initialParams={{ flow: 'objectRemoval' }}
-        options={{ title: 'Remove Object' }}
+options={{ title: i18n.t('nav.removeObject') }}
       />
-      <Stack.Screen name="ObjectRemover" component={ObjectRemoverScreenWithBoundary} options={{ title: 'Remove Object' }} />
-      <Stack.Screen name="Settings" component={SettingsScreenWithBoundary} options={{ title: 'Settings' }} />
-      <Stack.Screen name="Paywall" component={PaywallScreenWithBoundary} options={{ title: 'Magic Studio Pro' }} />
+      <Stack.Screen name="ObjectRemover" component={ObjectRemoverScreenWithBoundary} options={{ title: i18n.t('nav.removeObject') }} />
+      <Stack.Screen name="Settings" component={SettingsScreenWithBoundary} options={{ title: i18n.t('nav.settings') }} />
+      <Stack.Screen name="Paywall" component={PaywallScreenWithBoundary} options={{ title: i18n.t('nav.paywall') }}/>
     </Stack.Navigator>
   );
 }

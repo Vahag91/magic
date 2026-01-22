@@ -13,6 +13,8 @@ import SkiaBackgroundPreview from './SkiaBackgroundPreview';
 import FloatingTools from './FloatingTools';
 import EditorSheet from './EditorSheet';
 
+import i18n from '../../localization/i18n';
+
 const backgroundEditorLogger = createLogger('BackgroundEditor');
 
 export default function BackgroundEditorScreen({ navigation, route }) {
@@ -182,12 +184,6 @@ export default function BackgroundEditorScreen({ navigation, route }) {
     });
   }, []);
 
-  /**
-   * ✅ CRASH FIX:
-   * - Snapshot ONLY preview (small).
-   * - Let saveSkiaSnapshotToCache upscale to targetWidth/targetHeight.
-   * This avoids creating a huge offscreen Skia surface (native OOM crash).
-   */
   const handleSave = useCallback(async () => {
     try {
       const snap = previewRef.current?.makeImageSnapshot?.();
@@ -196,9 +192,6 @@ export default function BackgroundEditorScreen({ navigation, route }) {
         return;
       }
 
-      // Your ref might return:
-      // 1) { image, width, height }
-      // 2) SkImage directly
       const image = snap.image ? snap.image : snap;
       const width = snap.width ? snap.width : snap.width?.() || canvasSize.width;
       const height = snap.height ? snap.height : snap.height?.() || canvasSize.height;
@@ -240,12 +233,13 @@ export default function BackgroundEditorScreen({ navigation, route }) {
           canvasDisplayHeight: canvasSize.height,
         });
       } finally {
-        // If `image` is SkImage it should have dispose().
-        // If it's a wrapper, this won't crash due to optional chaining.
         image.dispose?.();
       }
     } catch (e) {
-      showAppError(e, { retry: handleSave, retryLabel: 'Try again' });
+      showAppError(e, {
+        retry: handleSave,
+        retryLabel: i18n.t('backgroundEditorScreen.retryButton'),
+      });
     }
   }, [
     canvasSize.height,
@@ -259,36 +253,14 @@ export default function BackgroundEditorScreen({ navigation, route }) {
     showError,
   ]);
 
-  React.useEffect(() => {
-    logIf('mode:change', { mode });
-  }, [logIf, mode]);
-
-  React.useEffect(() => {
-    logIf('layer:change', { activeLayer });
-  }, [logIf, activeLayer]);
-
-  React.useEffect(() => {
-    logIf('subjectVariant:change', { subjectVariant });
-  }, [logIf, subjectVariant]);
-
-  React.useEffect(() => {
-    logIf('checkerboard:change', { showCheckerboard });
-  }, [logIf, showCheckerboard]);
-
-  React.useEffect(() => {
-    logIf('filters:subject', subjectFilters);
-  }, [logIf, subjectFilters]);
-
-  React.useEffect(() => {
-    logIf('filters:bg', bgFilters);
-  }, [logIf, bgFilters]);
-
   React.useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: hasInput
         ? () => (
             <TouchableOpacity onPress={handleSave} style={styles.headerBtnPrimary} activeOpacity={0.9}>
-              <Text style={styles.headerBtnTextPrimary}>Save</Text>
+              <Text style={styles.headerBtnTextPrimary}>
+                {i18n.t('backgroundEditorScreen.saveButton')}
+              </Text>
             </TouchableOpacity>
           )
         : undefined,
@@ -298,14 +270,16 @@ export default function BackgroundEditorScreen({ navigation, route }) {
   const handleAddText = ({ x, y, focus = false } = {}) => {
     const xPos = typeof x === 'number' ? x : canvasSize.width / 2;
     const yPos = typeof y === 'number' ? y : canvasSize.height / 2;
+
     const newText = {
       id: Math.random().toString(36).substr(2, 9),
-      text: 'Double tap',
+      text: i18n.t('backgroundEditorScreen.defaultText'),
       color: '#FFFFFF',
       fontSize: 40,
       x: xPos - 80,
       y: yPos,
     };
+
     setTextLayers((prev) => [...prev, newText]);
     setSelectedTextId(newText.id);
     setActiveLayer('text');
@@ -323,10 +297,16 @@ export default function BackgroundEditorScreen({ navigation, route }) {
     return (
       <SafeAreaView style={styles.container} edges={['bottom']}>
         <View style={styles.emptyState}>
-          <Text style={styles.emptyTitle}>No image selected</Text>
-          <Text style={styles.emptySub}>Go back and pick an image.</Text>
+          <Text style={styles.emptyTitle}>
+            {i18n.t('backgroundEditorScreen.noImageSelectedTitle')}
+          </Text>
+          <Text style={styles.emptySub}>
+            {i18n.t('backgroundEditorScreen.noImageSelectedSubtitle')}
+          </Text>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.emptyBtn} activeOpacity={0.85}>
-            <Text style={styles.emptyBtnText}>Go Back</Text>
+            <Text style={styles.emptyBtnText}>
+              {i18n.t('backgroundEditorScreen.goBackButton')}
+            </Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>

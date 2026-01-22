@@ -21,6 +21,7 @@ import {
   getHdProcessingEnabled,
   setHdProcessingEnabled,
 } from '../lib/settings';
+import i18n from '../localization/i18n';
 
 const IOS = {
   accent: '#2F6BFF',
@@ -48,7 +49,7 @@ async function openExternalUrl(url) {
       return;
     }
   } catch {}
-  Alert.alert('Unable to open link', 'Please try again.');
+  Alert.alert(i18n.t('settingsScreen.unableToOpenLink'), i18n.t('removeBackgroundSelectScreen.tryAgain'));
 }
 
 export default function SettingsScreen({
@@ -101,10 +102,10 @@ export default function SettingsScreen({
       onExportFormat(saved);
     };
 
-    Alert.alert('Default Export Format', 'Choose the default format for exports.', [
+    Alert.alert(i18n.t('settingsScreen.defaultExportFormatTitle'), i18n.t('settingsScreen.defaultExportFormatMessage'), [
       { text: 'PNG', onPress: () => apply('png') },
       { text: 'JPG', onPress: () => apply('jpg') },
-      { text: 'Cancel', style: 'cancel' },
+      { text: i18n.t('exportScreen.alertCancelButton'), style: 'cancel' },
     ]);
   }, [onExportFormat]);
 
@@ -146,10 +147,10 @@ export default function SettingsScreen({
 
             <View style={{ flex: 1 }}>
               <Text style={styles.promoTitle}>
-                {isPremium ? 'Magic Studio Pro' : 'Magic Studio'}
+                {isPremium ? i18n.t('settingsScreen.magicStudioProTitle') : i18n.t('settingsScreen.magicStudioTitle')}
               </Text>
               <Text style={styles.promoSubtitle}>
-                {isPremium ? 'Premium unlocked' : 'Settings'}
+                {isPremium ? i18n.t('settingsScreen.premiumUnlockedSubtitle') : i18n.t('settingsScreen.settingsSubtitle')}
               </Text>
             </View>
           </View>
@@ -164,14 +165,14 @@ export default function SettingsScreen({
                 !canNavigatePaywall && { opacity: 0.6 },
               ]}
               accessibilityRole={canNavigatePaywall ? 'button' : undefined}
-              accessibilityLabel="Upgrade to Premium"
+              accessibilityLabel={i18n.t('settingsScreen.upgradeToPremiumButton')}
             >
-              <Text style={styles.promoBtnText}>Upgrade to Premium</Text>
+              <Text style={styles.promoBtnText}>{i18n.t('settingsScreen.upgradeToPremiumButton')}</Text>
             </Pressable>
           ) : null}
         </View>
 
-        <SectionLabel>APP SETTINGS</SectionLabel>
+        <SectionLabel>{i18n.t('settingsScreen.appSettingsSection')}</SectionLabel>
         <InsetGroup>
           <Cell
             left={
@@ -179,14 +180,14 @@ export default function SettingsScreen({
                 <DefaultExportFormatIcon />
               </SquareIcon>
             }
-            title="Default Export Format"
+            title={i18n.t('settingsScreen.defaultExportFormatLabel')}
             right={<RightValue value={String(defaultExportFormat || 'png').toUpperCase()} />}
             onPress={handleDefaultExportFormatPress}
             isLast
           />
         </InsetGroup>
 
-        <SectionLabel>AI &amp; PROCESSING</SectionLabel>
+        <SectionLabel>{i18n.t('settingsScreen.aiProcessingSection')}</SectionLabel>
         <InsetGroup>
           <Cell
             left={
@@ -196,7 +197,7 @@ export default function SettingsScreen({
             }
             title={
               <View style={styles.rowTitleWrap}>
-                <Text style={styles.cellTitle}>HD Processing</Text>
+                <Text style={styles.cellTitle}>{i18n.t('settingsScreen.hdProcessingLabel')}</Text>
                 <View style={styles.proBadge}>
                   <Text style={styles.proBadgeText}>PRO</Text>
                 </View>
@@ -219,11 +220,11 @@ export default function SettingsScreen({
           />
         </InsetGroup>
 
-        <SectionLabel>SUPPORT &amp; LEGAL</SectionLabel>
+        <SectionLabel>{i18n.t('settingsScreen.supportLegalSection')}</SectionLabel>
         <InsetGroup>
           <Cell
             left={<SquareIcon bg="#007AFF" icon="help-circle" />}
-            title="Help Center"
+            title={i18n.t('settingsScreen.helpCenterLabel')}
             right="chevron"
             onPress={onHelp}
           />
@@ -233,7 +234,7 @@ export default function SettingsScreen({
                 <RateAppIcon />
               </SquareIcon>
             }
-            title="Rate App"
+            title={i18n.t('settingsScreen.rateAppLabel')}
             right="chevron"
             onPress={onRate}
           />
@@ -243,7 +244,7 @@ export default function SettingsScreen({
                 <ShareFriendsIcon />
               </SquareIcon>
             }
-            title="Share with Friends"
+            title={i18n.t('settingsScreen.shareWithFriendsLabel')}
             right="chevron"
             onPress={onShare}
           />
@@ -253,7 +254,7 @@ export default function SettingsScreen({
                 <PrivacyPolicyIcon />
               </SquareIcon>
             }
-            title="Privacy Policy"
+            title={i18n.t('settingsScreen.privacyPolicyLabel')}
             right="chevron"
             onPress={onPrivacy}
           />
@@ -263,7 +264,7 @@ export default function SettingsScreen({
                 <TermsOfServiceIcon />
               </SquareIcon>
             }
-            title="Terms of Service"
+            title={i18n.t('settingsScreen.termsOfServiceLabel')}
             right="chevron"
             onPress={onTerms}
             isLast

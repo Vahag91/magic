@@ -15,6 +15,7 @@ import { removeObjectWithGeminiInpainting } from '../api/removeObjectGemini';
 import { removeObjectRunware } from '../api/removeObjectRunware';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from './BackgroundEditor/styles';
 import { createLogger } from '../logger';
+import i18n from '../localization/i18n';
 
 const TEXT = colors.text || '#111827';
 const SUB = colors.muted || '#6B7280';
@@ -88,7 +89,7 @@ export default function ObjectRemoverScreen({ navigation, route }) {
   const [redoStrokes, setRedoStrokes] = React.useState([]);
 
   const [isWorking, setIsWorking] = React.useState(false);
-  const [workingText, setWorkingText] = React.useState('Removing object…');
+  const [workingText, setWorkingText] = React.useState(i18n.t('objectRemoverScreen.removingObjectText'));
   const [requestPreview, setRequestPreview] = React.useState(null);
   const abortRef = React.useRef(null);
 
@@ -169,8 +170,8 @@ export default function ObjectRemoverScreen({ navigation, route }) {
 
   const onReset = React.useCallback(() => {
     if (!strokes.length) return;
-    Alert.alert('Reset mask?', 'This will clear your painted mask.', [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(i18n.t('objectRemoverScreen.resetMaskConfirmationTitle'), i18n.t('objectRemoverScreen.resetMaskConfirmationMessage'), [
+      { text: i18n.t('exportScreen.alertCancelButton'), style: 'cancel' },
       {
         text: 'Reset',
         style: 'destructive',
@@ -188,10 +189,10 @@ export default function ObjectRemoverScreen({ navigation, route }) {
       return;
     }
 
-    Alert.alert('Cancel?', 'Stop removing the object?', [
-      { text: 'Keep waiting', style: 'cancel' },
+    Alert.alert(i18n.t('objectRemoverScreen.cancelConfirmationTitle'), i18n.t('objectRemoverScreen.cancelConfirmationMessage'), [
+      { text: i18n.t('exportScreen.alertKeepWaitingButton'), style: 'cancel' },
       {
-        text: 'Cancel',
+        text: i18n.t('exportScreen.alertCancelButton'),
         style: 'destructive',
         onPress: () => {
           abortRef.current?.abort?.();
@@ -213,7 +214,7 @@ export default function ObjectRemoverScreen({ navigation, route }) {
     if (isWorking) return;
     if (!effectiveUri) return;
     if (!canSubmit) {
-      Alert.alert('Remove Object', 'Paint over the object you want to remove.');
+      Alert.alert(i18n.t('objectRemoverScreen.removeObjectTitle'), i18n.t('objectRemoverScreen.paintObjectToRemoveMessage'));
       return;
     }
 
@@ -225,7 +226,7 @@ export default function ObjectRemoverScreen({ navigation, route }) {
     try {
       target = getRunwareSafeSize({ width: srcW, height: srcH });
     } catch {
-      Alert.alert('Remove Object', 'Invalid image size.');
+      Alert.alert(i18n.t('objectRemoverScreen.removeObjectTitle'), i18n.t('objectRemoverScreen.invalidImageSize'));
       return;
     }
     const outputRatio = target.width && target.height ? target.width / target.height : null;
@@ -236,7 +237,7 @@ export default function ObjectRemoverScreen({ navigation, route }) {
     abortRef.current = controller;
 
     setIsWorking(true);
-    setWorkingText('Preparing image…');
+    setWorkingText(i18n.t('objectRemoverScreen.preparingImageText'));
     setRequestPreview(null);
 
     try {
@@ -266,7 +267,7 @@ export default function ObjectRemoverScreen({ navigation, route }) {
 
         if (controller.signal.aborted) return;
 
-        setWorkingText('Marking selection…');
+        setWorkingText(i18n.t('objectRemoverScreen.markingSelectionText'));
         const markedDataUri = await exportMarkedImageToDataUri({
           seedResizedUri: resized.uri,
           strokes,
@@ -276,7 +277,7 @@ export default function ObjectRemoverScreen({ navigation, route }) {
           sourceHeight: srcH,
         });
 
-        setWorkingText('Removing object…');
+        setWorkingText(i18n.t('objectRemoverScreen.removingObjectText'));
         setRequestPreview({ imageUri: markedDataUri });
         const resultUri = await removeObjectWithGeminiInpainting({
           markedImageBase64: markedDataUri,
@@ -310,7 +311,7 @@ export default function ObjectRemoverScreen({ navigation, route }) {
 
         if (controller.signal.aborted) return;
 
-        setWorkingText('Exporting mask…');
+        setWorkingText(i18n.t('objectRemoverScreen.exportingMaskText'));
         const maskDataUri = exportMaskToDataUri({
           strokes,
           width: target.width,
@@ -319,7 +320,7 @@ export default function ObjectRemoverScreen({ navigation, route }) {
           sourceHeight: srcH,
         });
 
-        setWorkingText('Removing object…');
+        setWorkingText(i18n.t('objectRemoverScreen.removingObjectText'));
         setRequestPreview({ imageUri: seedDataUri, maskUri: maskDataUri });
         const imageURL = await removeObjectRunware({
           seedUri: seedDataUri,
@@ -381,13 +382,13 @@ export default function ObjectRemoverScreen({ navigation, route }) {
         <View style={styles.content}>
           {!imageUri ? (
             <View style={styles.center}>
-              <Text style={styles.title}>No image selected</Text>
-              <Text style={styles.sub}>Go back and pick an image.</Text>
+              <Text style={styles.title}>{i18n.t('objectRemoverScreen.noImageSelected')}</Text>
+              <Text style={styles.sub}>{i18n.t('objectRemoverScreen.goBackAndPickImage')}</Text>
             </View>
           ) : showSizeLoader ? (
             <View style={styles.center}>
               <ActivityIndicator />
-              <Text style={styles.sub}>{isPreparingInput ? 'Preparing image…' : 'Loading image…'}</Text>
+              <Text style={styles.sub}>{isPreparingInput ? i18n.t('objectRemoverScreen.preparingImageText') : i18n.t('objectRemoverScreen.loadingImageText')}</Text>
             </View>
           ) : (
             <>
@@ -405,7 +406,7 @@ export default function ObjectRemoverScreen({ navigation, route }) {
               </View>
 
               <Text style={styles.help}>
-                Paint over what you want removed. Use eraser to restore.
+                {i18n.t('objectRemoverScreen.paintOverHelpText')}
               </Text>
             </>
           )}

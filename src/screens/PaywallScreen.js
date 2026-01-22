@@ -18,6 +18,7 @@ import BeforeAfterSlider from '../components/BeforeAfterSlider';
 import { fonts } from '../styles';
 import { useSubscription } from '../providers/SubscriptionProvider';
 import { useError } from '../providers/ErrorProvider';
+import i18n from '../localization/i18n';
 
 const COLORS = {
   primary: '#3366FF',
@@ -34,7 +35,7 @@ const COLORS = {
 const HERO_BEFORE = require('../../assets/onboarding/beforeobject.jpg');
 const HERO_AFTER = require('../../assets/onboarding/afterobject.jpg');
 
-function formatCurrencyAmount({ amount, currencyCode, priceString }) {
+function formatCurrencyAmount({ amount, currencyCode }) {
   if (!Number.isFinite(amount)) return null;
   const code = String(currencyCode || '').trim().toUpperCase();
   if (!code) return null;
@@ -183,17 +184,22 @@ export default function PaywallScreen({ navigation }) {
     () => [
       {
         id: 1,
-        title: 'Instant Background Removal',
-        sub: 'Isolate subjects with pro-level precision.',
+        title: i18n.t('paywall.features.instantBgTitle'),
+        sub: i18n.t('paywall.features.instantBgSub'),
         icon: 'instant',
       },
       {
         id: 2,
-        title: 'Smart Object Eraser',
-        sub: 'Cleanly remove unwanted elements.',
+        title: i18n.t('paywall.features.objectEraserTitle'),
+        sub: i18n.t('paywall.features.objectEraserSub'),
         icon: 'eraser',
       },
-      { id: 3, title: 'HD Quality Exports', sub: 'Save creations in crisp definition.', icon: 'hd' },
+      {
+        id: 3,
+        title: i18n.t('paywall.features.hdExportTitle'),
+        sub: i18n.t('paywall.features.hdExportSub'),
+        icon: 'hd',
+      },
     ],
     [],
   );
@@ -201,15 +207,15 @@ export default function PaywallScreen({ navigation }) {
   function getPackageTitle(pkg) {
     switch (pkg?.packageType) {
       case 'ANNUAL':
-        return 'Yearly';
+        return i18n.t('paywall.plan.yearly');
       case 'MONTHLY':
-        return 'Monthly';
+        return i18n.t('paywall.plan.monthly');
       case 'WEEKLY':
-        return 'Weekly';
+        return i18n.t('paywall.plan.weekly');
       case 'LIFETIME':
-        return 'Lifetime';
+        return i18n.t('paywall.plan.lifetime');
       default:
-        return pkg?.product?.title || 'Subscription';
+        return pkg?.product?.title || i18n.t('paywall.plan.subscription');
     }
   }
 
@@ -218,24 +224,24 @@ export default function PaywallScreen({ navigation }) {
     const desc = String(pkg?.product?.description || '').trim();
     if (desc) return desc;
     const productId = pkg?.product?.identifier;
-    if (productId) return `Product: ${productId}`;
+    if (productId) return i18n.t('paywall.plan.productId', { id: productId });
     return '';
   }
 
-	  function getPackagePriceMeta(pkg) {
-	    const product = pkg?.product;
-	    if (!product) return { amount: '', period: '', billing: '' };
+  function getPackagePriceMeta(pkg) {
+    const product = pkg?.product;
+    if (!product) return { amount: '', period: '', billing: '' };
 
-	    const numeric = getProductPriceValue(product);
-	    const currencyCode = String(product.currencyCode || product.currency || '').trim().toUpperCase();
-	    const priceString = product.priceString || '';
+    const numeric = getProductPriceValue(product);
+    const currencyCode = String(product.currencyCode || product.currency || '').trim().toUpperCase();
+    const priceString = product.priceString || '';
 
-	    if (Number.isFinite(numeric) && numeric > 0 && currencyCode) {
-	      return { amount: `${currencyCode} ${numeric.toFixed(2)}`, period: '', billing: '' };
-	    }
+    if (Number.isFinite(numeric) && numeric > 0 && currencyCode) {
+      return { amount: `${currencyCode} ${numeric.toFixed(2)}`, period: '', billing: '' };
+    }
 
-	    return { amount: priceString, period: '', billing: '' };
-	  }
+    return { amount: priceString, period: '', billing: '' };
+  }
 
   const handleSubscribe = React.useCallback(async () => {
     if (!isConfigured) {
@@ -251,7 +257,7 @@ export default function PaywallScreen({ navigation }) {
       await purchasePackage(selectedPackage);
     } catch (e) {
       if (e?.userCancelled) return;
-      showAppError(e, { retry: handleSubscribe, retryLabel: 'Try again' });
+      showAppError(e, { retry: handleSubscribe, retryLabel: i18n.t('common.tryAgain') });
     }
   }, [isConfigured, purchasePackage, selectedPackage, showAppError, showError]);
 
@@ -287,12 +293,12 @@ export default function PaywallScreen({ navigation }) {
 
             <View style={styles.badgeContainer} pointerEvents="none">
               <View style={styles.badge}>
-                <Text style={styles.badgeText}>PREMIUM</Text>
+                <Text style={styles.badgeText}>{i18n.t('paywall.badgePremium')}</Text>
               </View>
             </View>
 
             <View style={styles.heroTextContainer} pointerEvents="none">
-              <Text style={styles.heroHeadline}>Unlock Your Creative Potential</Text>
+              <Text style={styles.heroHeadline}>{i18n.t('paywall.headline')}</Text>
             </View>
           </View>
         </View>
@@ -315,8 +321,8 @@ export default function PaywallScreen({ navigation }) {
           {showFreeTrialToggle ? (
             <View style={styles.trialToggleCard}>
               <View style={styles.trialToggleTextWrap}>
-                <Text style={styles.trialToggleTitle}>Start Free Trial</Text>
-                <Text style={styles.trialToggleSub}>Try Premium free, cancel anytime.</Text>
+                <Text style={styles.trialToggleTitle}>{i18n.t('paywall.freeTrial.title')}</Text>
+                <Text style={styles.trialToggleSub}>{i18n.t('paywall.freeTrial.subtitle')}</Text>
               </View>
               <Switch
                 value={trialEnabled}
@@ -328,106 +334,108 @@ export default function PaywallScreen({ navigation }) {
             </View>
           ) : null}
 
-	          {availablePackages.length ? (
-	            availablePackages.map((pkg, idx) => {
-	              const isSelected = pkg?.identifier === selectedPackageId;
-	              const title = getPackageTitle(pkg);
-	              const sub = getPackageSubTitle(pkg);
-	              const { amount, period, billing } = getPackagePriceMeta(pkg);
-	              const isWeekly = pkg?.packageType === 'WEEKLY';
-	              const isYearly = pkg?.packageType === 'ANNUAL';
-	              const isMonthly = pkg?.packageType === 'MONTHLY';
+          {availablePackages.length ? (
+            availablePackages.map((pkg, idx) => {
+              const isSelected = pkg?.identifier === selectedPackageId;
+              const title = getPackageTitle(pkg);
+              const sub = getPackageSubTitle(pkg);
+              const { amount, period, billing } = getPackagePriceMeta(pkg);
+              const isWeekly = pkg?.packageType === 'WEEKLY';
+              const isYearly = pkg?.packageType === 'ANNUAL';
+              const isMonthly = pkg?.packageType === 'MONTHLY';
 
-	              const weeklyEquivalent = (() => {
-	                if (!isYearly) return null;
-	                const yearlyValue = getProductPriceValue(pkg?.product);
-	                if (!Number.isFinite(yearlyValue) || yearlyValue <= 0) return null;
-	                const weeklyValue = yearlyValue / 52;
-	                return formatCurrencyAmount({
-	                  amount: weeklyValue,
-	                  currencyCode: pkg?.product?.currencyCode,
-	                  priceString: amount,
-	                });
-	              })();
+              const weeklyEquivalent = (() => {
+                if (!isYearly) return null;
+                const yearlyValue = getProductPriceValue(pkg?.product);
+                if (!Number.isFinite(yearlyValue) || yearlyValue <= 0) return null;
+                const weeklyValue = yearlyValue / 52;
+                return formatCurrencyAmount({
+                  amount: weeklyValue,
+                  currencyCode: pkg?.product?.currencyCode,
+                });
+              })();
 
-	              return (
-	                <Pressable
-	                  key={pkg?.identifier || String(idx)}
-	                  onPress={() => setSelectedPackageId(pkg?.identifier ?? null)}
+              return (
+                <Pressable
+                  key={pkg?.identifier || String(idx)}
+                  onPress={() => setSelectedPackageId(pkg?.identifier ?? null)}
                   style={({ pressed }) => [
                     styles.pricingCard,
                     isSelected ? styles.pricingCardActive : styles.pricingCardInactive,
                     pressed && styles.pressed,
                   ]}
                 >
-	                  {pkg?.packageType === 'ANNUAL' ? (
-	                    <View style={styles.saveBadge}>
-	                      <Text style={styles.saveBadgeText}>
-	                        {yearlyDiscountPercent != null ? `SAVE ${yearlyDiscountPercent}%` : 'BEST VALUE'}
-	                      </Text>
-	                    </View>
-	                  ) : null}
+                  {pkg?.packageType === 'ANNUAL' ? (
+                    <View style={styles.saveBadge}>
+                      <Text style={styles.saveBadgeText}>
+                        {yearlyDiscountPercent != null
+                          ? i18n.t('paywall.savePercent', { percent: yearlyDiscountPercent })
+                          : i18n.t('paywall.bestValue')}
+                      </Text>
+                    </View>
+                  ) : null}
 
-	                  <View style={styles.rowSpread}>
-	                    <View style={styles.planLeft}>
-	                      <Text style={styles.planTitle}>{title}</Text>
-	                      {isWeekly ? (
-	                        <Text style={styles.weeklyTrialLabel}>3 days free, then</Text>
-	                      ) : null}
-	                      {isYearly ? (
-	                        <Text style={styles.planSubYear}>Only {amount}</Text>
-	                      ) : null}
-	                      {!isYearly && !isWeekly && sub ? (
-	                        <Text style={styles.planSub}>{sub}</Text>
-	                      ) : null}
-	                    </View>
+                  <View style={styles.rowSpread}>
+                    <View style={styles.planLeft}>
+                      <Text style={styles.planTitle}>{title}</Text>
 
-	                    <View style={styles.alignEnd}>
-	                      <Text
-	                        style={[
-	                          styles.planPrice,
-	                          { color: isSelected ? COLORS.primary : COLORS.priceText },
-	                        ]}
-	                      >
-	                        {isYearly && weeklyEquivalent ? weeklyEquivalent : amount}
-	                      </Text>
+                      {isWeekly ? (
+                        <Text style={styles.weeklyTrialLabel}>{i18n.t('paywall.weeklyTrialLabel')}</Text>
+                      ) : null}
 
-	                      {isYearly && weeklyEquivalent ? (
-	                        <Text style={styles.planSub}>per week</Text>
-	                      ) :  isMonthly ? (
-	                        <Text style={styles.planSub}>/month</Text>
-	                      ) : isWeekly ? (
-	                        <Text style={styles.planSub}>per week</Text>
-	                      ) : null}
+                      {isYearly ? (
+                        <Text style={styles.planSubYear}>{i18n.t('paywall.onlyAmount', { amount })}</Text>
+                      ) : null}
 
-	                      {period ? <Text style={styles.planSub}>{period}</Text> : null}
-	                      {billing ? <Text style={styles.planSub}>{billing}</Text> : null}
-	                    </View>
-	                  </View>
-	                </Pressable>
-	              );
+                      {!isYearly && !isWeekly && sub ? (
+                        <Text style={styles.planSub}>{sub}</Text>
+                      ) : null}
+                    </View>
+
+                    <View style={styles.alignEnd}>
+                      <Text
+                        style={[
+                          styles.planPrice,
+                          { color: isSelected ? COLORS.primary : COLORS.priceText },
+                        ]}
+                      >
+                        {isYearly && weeklyEquivalent ? weeklyEquivalent : amount}
+                      </Text>
+
+                      {isYearly && weeklyEquivalent ? (
+                        <Text style={styles.planSub}>{i18n.t('paywall.perWeek')}</Text>
+                      ) : isMonthly ? (
+                        <Text style={styles.planSub}>{i18n.t('paywall.perMonth')}</Text>
+                      ) : isWeekly ? (
+                        <Text style={styles.planSub}>{i18n.t('paywall.perWeek')}</Text>
+                      ) : null}
+
+                      {period ? <Text style={styles.planSub}>{period}</Text> : null}
+                      {billing ? <Text style={styles.planSub}>{billing}</Text> : null}
+                    </View>
+                  </View>
+                </Pressable>
+              );
             })
           ) : (
             <View style={[styles.pricingCard, styles.pricingCardInactive]}>
               {lastError ? (
                 <>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.planTitle}>Unable to load plans</Text>
-                    <Text style={styles.planSub}>
-                      Please try again.
-                    </Text>
+                    <Text style={styles.planTitle}>{i18n.t('paywall.plans.unableTitle')}</Text>
+                    <Text style={styles.planSub}>{i18n.t('paywall.plans.unableSubtitle')}</Text>
                   </View>
                   <Pressable
                     onPress={handleRetryOfferings}
                     style={({ pressed }) => [styles.retryBtn, pressed && styles.pressed]}
                   >
-                    <Text style={styles.retryText}>Retry</Text>
+                    <Text style={styles.retryText}>{i18n.t('paywall.plans.retry')}</Text>
                   </Pressable>
                 </>
               ) : (
                 <View>
-                  <Text style={styles.planTitle}>Loading plans…</Text>
-                  <Text style={styles.planSub}>Fetching subscriptions from RevenueCat.</Text>
+                  <Text style={styles.planTitle}>{i18n.t('paywall.plans.loadingTitle')}</Text>
+                  <Text style={styles.planSub}>{i18n.t('paywall.plans.loadingSubtitle')}</Text>
                 </View>
               )}
             </View>
@@ -443,7 +451,7 @@ export default function PaywallScreen({ navigation }) {
             ]}
           >
             <Text style={styles.ctaText}>
-              {trialEnabled ? 'Start Free Trial' : 'Continue'}
+              {trialEnabled ? i18n.t('paywall.cta.startFreeTrial') : i18n.t('paywall.cta.continue')}
             </Text>
           </Pressable>
         </View>
@@ -592,37 +600,37 @@ const styles = StyleSheet.create({
   planPrice: { fontFamily: fonts.regular, fontSize: 18, fontWeight: '800' },
   planSub: { fontFamily: fonts.regular, fontSize: 13, marginTop: 2, color: COLORS.textSub },
 
-	  ctaButton: {
-	    backgroundColor: COLORS.primary,
-	    width: '100%',
-	    paddingVertical: 14,
-	    borderRadius: 14,
-	    alignItems: 'center',
-	    marginTop: 16,
-	    shadowColor: COLORS.primary,
-	    shadowOffset: { width: 0, height: 8 },
-	    shadowOpacity: 0.25,
-	    shadowRadius: 16,
-	    elevation: 8,
-	  },
-	  ctaDisabled: { opacity: 0.6 },
-	  ctaPressed: { opacity: 0.92, transform: [{ scale: 0.99 }] },
-		  ctaText: { fontFamily: fonts.regular, color: '#FFFFFF', fontSize: 17, fontWeight: '800' },
+  ctaButton: {
+    backgroundColor: COLORS.primary,
+    width: '100%',
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: 'center',
+    marginTop: 16,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  ctaDisabled: { opacity: 0.6 },
+  ctaPressed: { opacity: 0.92, transform: [{ scale: 0.99 }] },
+  ctaText: { fontFamily: fonts.regular, color: '#FFFFFF', fontSize: 17, fontWeight: '800' },
 
-	  retryBtn: {
-	    paddingHorizontal: 12,
-	    paddingVertical: 10,
-	    borderRadius: 12,
-	    backgroundColor: COLORS.primary,
-	    marginLeft: 12,
-	  },
-	  retryText: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
+  retryBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: COLORS.primary,
+    marginLeft: 12,
+  },
+  retryText: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
 
-	  footerLinks: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 24, marginTop: 12 },
-	  footerLinkText: { fontSize: 13, fontWeight: '600', color: COLORS.textSub },
-	  footerDivider: { width: 1, height: 14, backgroundColor: COLORS.border },
-	  legalText: {
-	    marginTop: 16,
+  footerLinks: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 24, marginTop: 12 },
+  footerLinkText: { fontSize: 13, fontWeight: '600', color: COLORS.textSub },
+  footerDivider: { width: 1, height: 14, backgroundColor: COLORS.border },
+  legalText: {
+    marginTop: 16,
     fontSize: 10,
     color: COLORS.textLight,
     textAlign: 'center',

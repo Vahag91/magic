@@ -19,6 +19,7 @@ import { useError } from '../providers/ErrorProvider';
 import { createLogger } from '../logger';
 import { normalizeImageOrientation } from '../lib/image/orientation';
 import { stripFileScheme } from '../utils';
+import i18n from '../localization/i18n';
 
 const RATIOS = [
   { key: '1:1', label: '1:1', value: 1 },
@@ -240,7 +241,7 @@ export default function CropScreen({ navigation, route }) {
 
     try {
       if (!ImageEditor?.cropImage) {
-        Alert.alert('Missing dependency', '@react-native-community/image-editor is required.');
+        Alert.alert(i18n.t('cropScreen.missingDependency'), i18n.t('cropScreen.imageEditorRequired'));
         return;
       }
 
@@ -408,9 +409,9 @@ export default function CropScreen({ navigation, route }) {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.center}>
-          <Text style={styles.title}>No image selected</Text>
+          <Text style={styles.title}>{i18n.t('cropScreen.noImageSelected')}</Text>
           <Pressable onPress={() => navigation.goBack()} style={styles.backPill}>
-            <Text style={styles.backPillText}>Go back</Text>
+            <Text style={styles.backPillText}>{i18n.t('cropScreen.goBack')}</Text>
           </Pressable>
         </View>
       </SafeAreaView>
@@ -423,7 +424,7 @@ export default function CropScreen({ navigation, route }) {
         <Pressable onPress={() => navigation.goBack()} style={styles.iconBtn}>
           <ArrowBackIcon size={22} color="#FFFFFF" />
         </Pressable>
-        <Text style={styles.headerTitle}>Crop</Text>
+        <Text style={styles.headerTitle}>{i18n.t('cropScreen.cropTitle')}</Text>
         <View style={styles.iconBtnPlaceholder} />
       </View>
 
@@ -458,7 +459,7 @@ export default function CropScreen({ navigation, route }) {
         </View>
 
         <Pressable onPress={handleDone} style={styles.doneBtn} disabled={isWorking}>
-          {isWorking ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.doneText}>Done</Text>}
+          {isWorking ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.doneText}>{i18n.t('cropScreen.doneButton')}</Text>}
         </Pressable>
       </View>
     </SafeAreaView>

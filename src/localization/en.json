@@ -1,0 +1,276 @@
+{
+  "exportScreen": {
+    "noExportedImage": "No exported image",
+    "formatSectionTitle": "FORMAT",
+    "pngFormatTitle": "PNG",
+    "pngFormatSubtitle": "Transparent",
+    "jpgFormatTitle": "JPG",
+    "jpgFormatSubtitle": "Smaller • No transparency",
+    "resolutionSectionTitle": "RESOLUTION",
+    "originalResolutionTitle": "Original",
+    "hdUpscaleTitle": "HD Upscale",
+    "hdUpscaleSubtitle": "AI Upscale • Better quality",
+    "proBadge": "PRO",
+    "upgradeCardTitle": "Upgrade for HD export",
+    "upgradeCardText": "Get AI-upscaled exports and remove watermarks.",
+    "tryProButton": "Try Pro",
+    "saveToPhotosButton": "Save to Photos",
+    "preparingButton": "Preparing…",
+    "shareButton": "Share",
+    "permissionRequiredAlertTitle": "Permission Required",
+    "iosPhotosPermissionMessage": "Please allow Photos access to save images.",
+    "androidStoragePermissionMessage": "Storage permission is required to save images.",
+    "alertCancelButton": "Cancel",
+    "alertOpenSettingsButton": "Open Settings",
+    "alertOkButton": "OK",
+    "alertKeepWaitingButton": "Keep waiting",
+    "preparingPhotosAlertTitle": "Preparing Photos…",
+    "preparingPhotosAlertMessage": "Photos is still initializing. Please try again in a moment.",
+    "successAlertTitle": "Success",
+    "imageSavedMessage": "Image saved to Photos!",
+    "greatButton": "Great",
+    "errorAlertTitle": "Error",
+    "couldNotSaveImageMessage": "Could not save image.",
+    "androidStoragePermissionRationaleTitle": "Storage Permission",
+    "androidPermissionAllowButton": "Allow",
+    "androidPermissionDenyButton": "Deny",
+    "androidStoragePermissionRationaleMessage": "Storage permission is required to save images.",
+    "formatPngSubtitle": "Transparent",
+    "formatJpgSubtitle": "Best for photos",
+    "hdLabel": "HD"
+  },
+  "backgroundEditorScreen": {
+    "pickFromLibrary": "Pick from Library",
+    "center": "Center",
+    "reset": "Reset",
+    "saveButton": "Save",
+    "retryButton": "Try again",
+    "defaultText": "Double tap",
+    "noImageSelectedTitle": "No image selected",
+    "noImageSelectedSubtitle": "Go back and pick an image.",
+    "goBackButton": "Go Back"
+  },
+  "cropScreen": {
+    "missingDependency": "Missing dependency",
+    "imageEditorRequired": "@react-native-community/image-editor is required.",
+    "noImageSelected": "No image selected",
+    "goBack": "Go back",
+    "cropTitle": "Crop",
+    "doneButton": "Done"
+  },
+  "removeBackgroundSelectScreen": {
+    "permissionRequired": "Permission required",
+    "enablePermissionInSettings": "Please enable permission in Settings.",
+    "noImageSelected": "No image selected",
+    "tryAgain": "Please try again.",
+    "allowAccessToPhotos": "Allow access to photos in settings.",
+    "heroTitle": "Select a Photo",
+    "objectRemovalHeroSubtitle": "Choose an image and paint over what you want removed.",
+    "backgroundRemovalHeroSubtitle": "Choose an image to magically remove its background instantly.",
+    "photoLibraryTitle": "Photo Library",
+    "photoLibrarySubtitle": "Select from your gallery",
+    "filesTitle": "Files",
+    "filesSubtitle": "Import from iCloud or Drive",
+    "proTipTitle": "Pro Tip",
+    "proTipObjectRemovalText": "Paint a slightly larger area than the object for smoother removal.",
+    "proTipBackgroundRemovalText": "Best results come from photos with a clear subject and good lighting.",
+    "preparingText": "Preparing…"
+  },
+  "objectRemoverScreen": {
+    "resetMaskConfirmationTitle": "Reset mask?",
+    "resetMaskConfirmationMessage": "This will clear your painted mask.",
+    "cancelConfirmationTitle": "Cancel?",
+    "cancelConfirmationMessage": "Stop removing the object?",
+    "removeObjectTitle": "Remove Object",
+    "paintObjectToRemoveMessage": "Paint over the object you want to remove.",
+    "invalidImageSize": "Invalid image size.",
+    "removingObjectText": "Removing object…",
+    "preparingImageText": "Preparing image…",
+    "markingSelectionText": "Marking selection…",
+    "exportingMaskText": "Exporting mask…",
+    "noImageSelected": "No image selected",
+    "goBackAndPickImage": "Go back and pick an image.",
+    "loadingImageText": "Loading image…",
+    "paintOverHelpText": "Paint over what you want removed. Use eraser to restore."
+  },
+  "settingsScreen": {
+    "unableToOpenLink": "Unable to open link",
+    "defaultExportFormatTitle": "Default Export Format",
+    "defaultExportFormatMessage": "Choose the default format for exports.",
+    "magicStudioProTitle": "Magic Studio Pro",
+    "magicStudioTitle": "Magic Studio",
+    "premiumUnlockedSubtitle": "Premium unlocked",
+    "settingsSubtitle": "Settings",
+    "upgradeToPremiumButton": "Upgrade to Premium",
+    "appSettingsSection": "APP SETTINGS",
+    "defaultExportFormatLabel": "Default Export Format",
+    "aiProcessingSection": "AI & PROCESSING",
+    "hdProcessingLabel": "HD Processing",
+    "supportLegalSection": "SUPPORT & LEGAL",
+    "helpCenterLabel": "Help Center",
+    "rateAppLabel": "Rate App",
+    "shareWithFriendsLabel": "Share with Friends",
+    "privacyPolicyLabel": "Privacy Policy",
+    "termsOfServiceLabel": "Terms of Service",
+    "magicStudioVersion": "Magic Studio v2.4.0"
+  },
+  "removeBackgroundProcessingScreen": {
+    "noImage": "No image",
+    "selectImageFirst": "Please select an image first.",
+    "cancelProcessingConfirmationTitle": "Cancel processing?",
+    "cancelProcessingConfirmationMessage": "Your cutout won’t be generated.",
+    "setupRequiredTitle": "Setup required",
+    "supabaseConfigMessage": "Supabase is not configured. Set SUPABASE_BASE and SUPABASE_ANON_KEY in .env, then restart Metro.",
+    "goBackButton": "Go back",
+    "heroTitle": "Removing Background",
+    "percentHint": "done",
+    "processingStatusText": "Processing",
+    "finishingStatusText": "Finishing",
+    "stepDetect": "Detect",
+    "stepPrepare": "Prepare",
+    "stepRemove": "Remove",
+    "stepFinish": "Finish",
+    "cancelButton": "Cancel",
+    "footerNote": "Tip: For best results use images with clear subject & good lighting.",
+    "backgroundRemovalHelpTitle": "Background Removal",
+    "backgroundRemovalHelpMessage": "We process your photo on the server and return a transparent PNG cutout. This usually takes a few seconds."
+  },
+  "homeScreen": {
+    "appTitle": "Magic Studio",
+    "appSubtitle": "Professional Photo Cleanup",
+    "removeBackgroundTitle": "Remove\nBackground",
+    "removeBackgroundSubtitle": "Instantly isolate subjects.",
+    "removeObjectTitle": "Remove\nObject",
+    "removeObjectSubtitle": "Erase unwanted elements."
+  },
+  "homeHeader": {
+    "premiumActiveLabel": "Premium active",
+    "premiumText": "Premium",
+    "settingsAccessibilityLabel": "Settings",
+    "getPremiumAccessibilityLabel": "Get Premium"
+  },
+  "geminiBackgroundGenerationScreen": {
+    "generateImageOnly": "Generate a high-quality background image only.",
+    "noPeopleOrText": "Do not include people, faces, text, logos, or watermarks.",
+    "coherentRealisticLook": "Keep the scene coherent and realistic unless the prompt requests a stylized look.",
+    "aspectRatioHint": "Use a 4:5 portrait aspect ratio."
+  },
+  "nav": {
+    "removeBackground": "Remove Background",
+    "removingBackground": "Removing Background",
+    "backgroundEditor": "Editor",
+    "export": "Export",
+    "removeObject": "Remove Object",
+    "settings": "Settings",
+    "paywall": "Magic Studio Pro"
+  },
+  "common": {
+    "tryAgain": "Try again"
+  },
+  "paywall": {
+    "badgePremium": "PREMIUM",
+    "headline": "Unlock Your Creative Potential",
+    "features": {
+      "instantBgTitle": "Instant Background Removal",
+      "instantBgSub": "Isolate subjects with pro-level precision.",
+      "objectEraserTitle": "Smart Object Eraser",
+      "objectEraserSub": "Cleanly remove unwanted elements.",
+      "hdExportTitle": "HD Quality Exports",
+      "hdExportSub": "Save creations in crisp definition."
+    },
+    "freeTrial": {
+      "title": "Start Free Trial",
+      "subtitle": "Try Premium free, cancel anytime."
+    },
+    "savePercent": "SAVE {{percent}}%",
+    "bestValue": "BEST VALUE",
+    "weeklyTrialLabel": "3 days free, then",
+    "onlyAmount": "Only {{amount}}",
+    "perWeek": "per week",
+    "perMonth": "/month",
+    "plans": {
+      "unableTitle": "Unable to load plans",
+      "unableSubtitle": "Please try again.",
+      "retry": "Retry",
+      "loadingTitle": "Loading plans…",
+      "loadingSubtitle": "Fetching subscriptions from RevenueCat."
+    },
+    "cta": {
+      "startFreeTrial": "Start Free Trial",
+      "continue": "Continue"
+    },
+    "plan": {
+      "yearly": "Yearly",
+      "monthly": "Monthly",
+      "weekly": "Weekly",
+      "lifetime": "Lifetime",
+      "subscription": "Subscription",
+      "productId": "Product: {{id}}"
+    }
+  },
+
+  "common": {
+    "on": "ON",
+    "off": "OFF"
+  },
+  "backgroundEditor": {
+    "modes": {
+      "clear": "Clear",
+      "color": "Color",
+      "blur": "Blur",
+      "gradient": "Gradient",
+      "image": "Image"
+    },
+    "sheet": {
+      "layerSubject": "Subject",
+      "layerBackground": "Background",
+      "layerText": "Text",
+
+      "tabMain": "Main",
+      "tabAdjust": "Adjust",
+      "tabShadow": "Shadow",
+
+      "filtersTitle": "Filters",
+      "brightnessLabel": "Brightness: {{value}}%",
+      "contrastLabel": "Contrast: {{value}}%",
+      "saturationLabel": "Saturation: {{value}}%",
+
+      "dropShadowTitle": "Drop Shadow",
+      "shadowBlurLabel": "Blur Radius: {{value}}",
+      "shadowOpacityLabel": "Opacity: {{value}}%",
+      "shadowDistanceLabel": "Distance (X/Y): {{value}}",
+
+      "modeTitle": "Mode",
+      "checkerboard": "Checkerboard",
+
+      "gradientColors": "Gradient Colors",
+      "gradientStart": "Start",
+      "gradientEnd": "End",
+      "angle": "Angle",
+      "intensity": "Intensity",
+
+      "predefined": "Predefined",
+      "opacity": "Opacity",
+      "tools": "Tools",
+      "toolMove": "Move",
+      "toolScale": "Scale",
+      "toolErase": "Erase",
+
+      "subject": "Subject",
+      "cutout": "Cutout",
+      "original": "Original",
+      "scaleSubject": "Scale Subject",
+      "eraserSizeLabel": "Eraser Size: {{value}}",
+
+      "addText": "Add Text",
+      "text": "Text",
+      "textPlaceholder": "Type your text...",
+      "delete": "Delete",
+      "color": "Color",
+      "size": "Size",
+      "doubleTapHint": "Double tap on the image to add text",
+      "blurStrength": "Blur Strength",
+      "dimBackground": "Dim Background"
+    }
+  }
+}
